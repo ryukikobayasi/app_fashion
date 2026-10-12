@@ -10,6 +10,7 @@ from PIL import Image
 
 from photo_recommender import (
     MAX_IMAGE_BYTES,
+    MAX_IMAGE_PIXELS,
     PhotoAnalysisError,
     _prepare_photo,
     recommend_from_photo,
@@ -196,9 +197,25 @@ class PhotoRecommenderTests(unittest.TestCase):
         with Image.open(BytesIO(base64.b64decode(encoded))) as normalized:
             self.assertEqual(normalized.format, "JPEG")
 
-    def test_high_resolution_phone_jpeg_is_downsampled_before_analysis(self):
-        image_url = _prepare_photo(make_large_jpeg())
+    @patch("photo_recommender.requests.post")
+    def test_high_resolution_phone_jpeg_is_downsampled_before_analysis(self, post):
+        response = Mock()
+        response.ok = True
+        response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(make_response_payload(), ensure_ascii=False)
+                    }
+                }
+            ]
+        }
+        post.return_value = response
+        self.image_bytes = make_large_jpeg()
 
+        result = self.call_recommender()
+        self.assertEqual(len(result.outfits), 5)
+        image_url = post.call_args.kwargs["json"]["messages"][0]["content"][1]["image_url"]["url"]
         self.assertTrue(image_url.startswith("data:image/jpeg;base64,"))
         encoded = image_url.split(",", 1)[1]
         with Image.open(BytesIO(base64.b64decode(encoded))) as normalized:
@@ -207,7 +224,7 @@ class PhotoRecommenderTests(unittest.TestCase):
 
     def test_images_over_the_source_pixel_limit_are_rejected(self):
         with patch("photo_recommender.Image.open") as open_image:
-            open_image.return_value.__enter__.return_value.size = (10001, 8000)
+            open_image.return_value.__enter__.return_value.size = (MAX_IMAGE_PIXELS + 1, 1)
 
             with self.assertRaisesRegex(PhotoAnalysisError, "解像度"):
                 _prepare_photo(b"jpeg")

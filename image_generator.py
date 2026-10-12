@@ -11,6 +11,7 @@ from photo_recommender import OutfitRecommendation
 
 OPENAI_IMAGE_GENERATION_URL = "https://api.openai.com/v1/images/generations"
 DEFAULT_IMAGE_MODEL = "gpt-image-1"
+MAX_GENERATED_IMAGE_PIXELS = 20_000_000
 
 
 class ImageGenerationError(Exception):
@@ -88,6 +89,8 @@ def generate_outfit_image(
             raise ImageGenerationError("画像生成サービスから不正な画像データが返されました。")
         image_bytes = base64.b64decode(encoded_image, validate=True)
         with Image.open(BytesIO(image_bytes)) as image:
+            if image.width * image.height > MAX_GENERATED_IMAGE_PIXELS:
+                raise ImageGenerationError("生成された画像の解像度が大きすぎます。")
             image.verify()
     except ImageGenerationError:
         raise

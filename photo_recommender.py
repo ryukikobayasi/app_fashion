@@ -13,9 +13,10 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions"
 DEFAULT_MODEL = "gpt-4.1-mini"
 MAX_IMAGE_BYTES = 30 * 1024 * 1024
-MAX_IMAGE_PIXELS = 80_000_000
+MAX_IMAGE_PIXELS = 250_000_000
 MAX_IMAGE_PIXELS_WITHOUT_JPEG_DOWNSAMPLING = 20_000_000
 MAX_IMAGE_SIDE = 1280
+Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
 
 
 class PhotoAnalysisError(Exception):
