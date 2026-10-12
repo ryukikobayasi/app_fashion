@@ -123,7 +123,7 @@ else:
         "使いたい服や小物がわかる写真を選んでください",
         type=["jpg", "jpeg", "png", "webp"],
         max_upload_size=30,
-        help="JPEG、PNG、WebP形式、30MB以下。高解像度のJPEGは自動で縮小します。",
+        help="JPEG、PNG、WebP形式、30MB以下。高解像度の写真は自動で縮小します。",
     )
 st.caption(
     "ファイル選択または撮影した写真は、提案ボタンを押すと画像解析のためOpenAI APIへ送信されます。"

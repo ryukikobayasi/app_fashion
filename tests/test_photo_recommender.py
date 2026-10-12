@@ -38,6 +38,14 @@ def make_large_jpeg(width=6000, height=4000):
     return output.getvalue()
 
 
+def make_large_image(format_name, width=6000, height=4000):
+    image = Image.new("RGB", (width, height), color="#7799aa")
+    output = BytesIO()
+    image.save(output, format=format_name)
+    image.close()
+    return output.getvalue()
+
+
 def make_response_payload(outfit_count=5):
     outfits = []
     for index in range(outfit_count):
@@ -221,6 +229,16 @@ class PhotoRecommenderTests(unittest.TestCase):
         with Image.open(BytesIO(base64.b64decode(encoded))) as normalized:
             self.assertEqual(normalized.format, "JPEG")
             self.assertEqual(normalized.size, (1280, 853))
+
+    def test_high_resolution_png_and_webp_are_downsampled_to_jpeg(self):
+        for format_name in ("PNG", "WEBP"):
+            with self.subTest(format=format_name):
+                image_url = _prepare_photo(make_large_image(format_name))
+                self.assertTrue(image_url.startswith("data:image/jpeg;base64,"))
+                encoded = image_url.split(",", 1)[1]
+                with Image.open(BytesIO(base64.b64decode(encoded))) as normalized:
+                    self.assertEqual(normalized.format, "JPEG")
+                    self.assertLessEqual(max(normalized.size), 1280)
 
     def test_images_over_the_source_pixel_limit_are_rejected(self):
         with patch("photo_recommender.Image.open") as open_image:

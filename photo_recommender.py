@@ -14,7 +14,7 @@ OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions"
 DEFAULT_MODEL = "gpt-4.1-mini"
 MAX_IMAGE_BYTES = 30 * 1024 * 1024
 MAX_IMAGE_PIXELS = 250_000_000
-MAX_IMAGE_PIXELS_WITHOUT_JPEG_DOWNSAMPLING = 20_000_000
+MAX_IMAGE_PIXELS_WITHOUT_JPEG_DOWNSAMPLING = 80_000_000
 MAX_IMAGE_SIDE = 1280
 Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
 
@@ -126,7 +126,7 @@ def _prepare_photo(image_bytes: bytes) -> str:
                 image.draft("RGB", (MAX_IMAGE_SIDE, MAX_IMAGE_SIDE))
             elif source_pixels > MAX_IMAGE_PIXELS_WITHOUT_JPEG_DOWNSAMPLING:
                 raise PhotoAnalysisError(
-                    "PNGやWebPの高解像度画像は処理できません。JPEGに変換するか、小さい画像を選んでください。"
+                    "PNGやWebPは80MP以下の画像を選んでください。JPEGなら高解像度画像も利用できます。"
                 )
 
             image.thumbnail((MAX_IMAGE_SIDE, MAX_IMAGE_SIDE), Image.Resampling.LANCZOS)
