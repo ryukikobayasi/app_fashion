@@ -7,13 +7,14 @@ from datetime import date
 from io import BytesIO
 
 import requests
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 
 OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions"
 DEFAULT_MODEL = "gpt-4.1-mini"
-MAX_IMAGE_BYTES = 10 * 1024 * 1024
-MAX_IMAGE_PIXELS = 20_000_000
+MAX_IMAGE_BYTES = 30 * 1024 * 1024
+MAX_IMAGE_PIXELS = 80_000_000
+MAX_IMAGE_PIXELS_WITHOUT_JPEG_DOWNSAMPLING = 20_000_000
 MAX_IMAGE_SIDE = 1280
 
 
@@ -111,20 +112,24 @@ def _prepare_photo(image_bytes: bytes) -> str:
     if not image_bytes:
         raise PhotoAnalysisError("写真ファイルが空です。別の画像を選んでください。")
     if len(image_bytes) > MAX_IMAGE_BYTES:
-        raise PhotoAnalysisError("写真は10MB以下にしてください。")
+        raise PhotoAnalysisError("写真は30MB以下にしてください。")
 
     try:
         with Image.open(BytesIO(image_bytes)) as image:
             width, height = image.size
-            if width * height > MAX_IMAGE_PIXELS:
+            source_pixels = width * height
+            if source_pixels > MAX_IMAGE_PIXELS:
                 raise PhotoAnalysisError("画像の解像度が大きすぎます。小さい画像を選んでください。")
 
-            image.load()
-            normalized = image.convert("RGB")
-            normalized.thumbnail(
-                (MAX_IMAGE_SIDE, MAX_IMAGE_SIDE),
-                Image.Resampling.LANCZOS,
-            )
+            if image.format == "JPEG":
+                image.draft("RGB", (MAX_IMAGE_SIDE, MAX_IMAGE_SIDE))
+            elif source_pixels > MAX_IMAGE_PIXELS_WITHOUT_JPEG_DOWNSAMPLING:
+                raise PhotoAnalysisError(
+                    "PNGやWebPの高解像度画像は処理できません。JPEGに変換するか、小さい画像を選んでください。"
+                )
+
+            image.thumbnail((MAX_IMAGE_SIDE, MAX_IMAGE_SIDE), Image.Resampling.LANCZOS)
+            normalized = ImageOps.exif_transpose(image).convert("RGB")
             output = BytesIO()
             normalized.save(output, format="JPEG", quality=85, optimize=True)
     except PhotoAnalysisError:

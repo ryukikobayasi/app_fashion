@@ -29,7 +29,7 @@ st.set_page_config(
     page_title="FITTING | 手持ち服からコーデ提案",
     page_icon=":material/checkroom:",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 
@@ -122,8 +122,8 @@ else:
     uploaded_photo = st.file_uploader(
         "使いたい服や小物がわかる写真を選んでください",
         type=["jpg", "jpeg", "png", "webp"],
-        max_upload_size=10,
-        help="JPEG、PNG、WebP形式、10MB以下。1枚の写真を読み取ります。",
+        max_upload_size=30,
+        help="JPEG、PNG、WebP形式、30MB以下。高解像度のJPEGは自動で縮小します。",
     )
 st.caption(
     "ファイル選択または撮影した写真は、提案ボタンを押すと画像解析のためOpenAI APIへ送信されます。"
@@ -136,7 +136,7 @@ if uploaded_photo is None:
     photo_digest = ""
 else:
     if uploaded_photo.size > MAX_IMAGE_BYTES:
-        st.error("写真は10MB以下にしてください。")
+        st.error("写真は30MB以下にしてください。")
         photo_bytes = None
         photo_digest = ""
     else:

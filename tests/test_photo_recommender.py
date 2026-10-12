@@ -30,6 +30,13 @@ def make_bmp():
     return output.getvalue()
 
 
+def make_large_jpeg(width=6000, height=4000):
+    image = Image.new("RGB", (width, height), color="#7799aa")
+    output = BytesIO()
+    image.save(output, format="JPEG", quality=75)
+    return output.getvalue()
+
+
 def make_response_payload(outfit_count=5):
     outfits = []
     for index in range(outfit_count):
@@ -188,6 +195,22 @@ class PhotoRecommenderTests(unittest.TestCase):
         encoded = image_url.split(",", 1)[1]
         with Image.open(BytesIO(base64.b64decode(encoded))) as normalized:
             self.assertEqual(normalized.format, "JPEG")
+
+    def test_high_resolution_phone_jpeg_is_downsampled_before_analysis(self):
+        image_url = _prepare_photo(make_large_jpeg())
+
+        self.assertTrue(image_url.startswith("data:image/jpeg;base64,"))
+        encoded = image_url.split(",", 1)[1]
+        with Image.open(BytesIO(base64.b64decode(encoded))) as normalized:
+            self.assertEqual(normalized.format, "JPEG")
+            self.assertEqual(normalized.size, (1280, 853))
+
+    def test_images_over_the_source_pixel_limit_are_rejected(self):
+        with patch("photo_recommender.Image.open") as open_image:
+            open_image.return_value.__enter__.return_value.size = (10001, 8000)
+
+            with self.assertRaisesRegex(PhotoAnalysisError, "解像度"):
+                _prepare_photo(b"jpeg")
 
     @patch("photo_recommender.requests.post")
     def test_api_errors_are_reported(self, post):
