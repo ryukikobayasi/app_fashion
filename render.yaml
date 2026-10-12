@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: fitting-fashion
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: >-
+      sh -c 'test -n "$OPENAI_API_KEY" || { echo "OPENAI_API_KEY is required" >&2; exit 1; };
+      exec streamlit run app.py --server.address 0.0.0.0 --server.port "$PORT"'
+    healthCheckPath: /_stcore/health
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
