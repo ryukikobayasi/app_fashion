@@ -2,6 +2,8 @@ from dataclasses import dataclass
 
 import requests
 import streamlit as st
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 
 class WeatherDataError(Exception):
@@ -70,24 +72,35 @@ def get_weather(city_name: str) -> Weather:
     if city is None:
         raise ValueError(f"対応していない地域です: {city_name}")
 
-    response = requests.get(
-        _FORECAST_URL,
-        params={
-            "latitude": city.latitude,
-            "longitude": city.longitude,
-            "current": (
-                "temperature_2m,apparent_temperature,relative_humidity_2m,"
-                "weather_code,wind_speed_10m"
-            ),
-            "daily": (
-                "weather_code,temperature_2m_max,temperature_2m_min,"
-                "precipitation_probability_max,wind_speed_10m_max"
-            ),
-            "forecast_days": 1,
-            "timezone": "Asia/Tokyo",
-        },
-        timeout=10,
+    retry = Retry(
+        total=2,
+        connect=2,
+        read=2,
+        status=1,
+        backoff_factor=0.5,
+        status_forcelist=(500, 502, 503, 504),
+        allowed_methods=frozenset({"GET"}),
     )
+    with requests.Session() as session:
+        session.mount("https://", HTTPAdapter(max_retries=retry))
+        response = session.get(
+            _FORECAST_URL,
+            params={
+                "latitude": city.latitude,
+                "longitude": city.longitude,
+                "current": (
+                    "temperature_2m,apparent_temperature,relative_humidity_2m,"
+                    "weather_code,wind_speed_10m"
+                ),
+                "daily": (
+                    "weather_code,temperature_2m_max,temperature_2m_min,"
+                    "precipitation_probability_max,wind_speed_10m_max"
+                ),
+                "forecast_days": 1,
+                "timezone": "Asia/Tokyo",
+            },
+            timeout=(5, 20),
+        )
     response.raise_for_status()
     try:
         payload = response.json()

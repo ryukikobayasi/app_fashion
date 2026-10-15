@@ -155,6 +155,31 @@ else:
             st.caption("服全体が写っていて、色や形を確認できる明るい写真がおすすめです。")
             st.caption("複数の服が写っている場合は、組み合わせたいアイテムが分かる写真を選んでください。")
 
+weather = None
+weather_error = None
+if include_weather:
+    try:
+        weather = get_weather(city_name)
+    except (requests.RequestException, WeatherDataError) as error:
+        weather_error = error
+
+    with st.container(border=True):
+        st.markdown(f"**{city_name}の今日の天気**")
+        if weather is not None:
+            st.caption(
+                f"現在 {weather.current_temperature:.0f}°C（体感 {weather.feels_like:.0f}°C）"
+                f" · 最高 {weather.high:.0f}°C / 最低 {weather.low:.0f}°C"
+            )
+            st.caption(
+                f"降水確率 {weather.rain_probability}% · "
+                f"風速 {weather.wind_speed:.0f}km/h · 湿度 {weather.humidity}%"
+            )
+        else:
+            st.warning(f"天気を取得できませんでした。天気なしで提案します。詳細: {weather_error}")
+            if st.button("天気を再取得", key="retry_weather", icon=":material/refresh:"):
+                get_weather.clear()
+                st.rerun()
+
 today_trends = "、".join(seasonal_trends(today))
 request_signature = hashlib.sha256(
     "|".join(
@@ -188,17 +213,13 @@ if st.button(
         )
     else:
         weather_context = None
-        if include_weather:
-            try:
-                weather = get_weather(city_name)
-                weather_context = (
-                    f"{weather.city}、現在{weather.current_temperature:.0f}°C、"
-                    f"体感{weather.feels_like:.0f}°C、最高{weather.high:.0f}°C、"
-                    f"最低{weather.low:.0f}°C、降水確率{weather.rain_probability}%、"
-                    f"最大風速{weather.wind_speed:.0f}km/h、湿度{weather.humidity}%"
-                )
-            except (requests.RequestException, WeatherDataError) as error:
-                st.warning(f"天気を取得できないため、天気を除いてコーデを提案します。詳細: {error}")
+        if weather is not None:
+            weather_context = (
+                f"{weather.city}、現在{weather.current_temperature:.0f}°C、"
+                f"体感{weather.feels_like:.0f}°C、最高{weather.high:.0f}°C、"
+                f"最低{weather.low:.0f}°C、降水確率{weather.rain_probability}%、"
+                f"最大風速{weather.wind_speed:.0f}km/h、湿度{weather.humidity}%"
+            )
 
         try:
             with st.spinner("写真のアイテムを読み取り、5つの着こなしを考えています..."):
