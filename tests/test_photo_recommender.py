@@ -150,6 +150,28 @@ class PhotoRecommenderTests(unittest.TestCase):
         self.assertFalse(result.garment_found)
         self.assertEqual(result.outfits, ())
 
+    @patch("photo_recommender.requests.post")
+    def test_accepts_more_than_four_detected_item_colors(self, post):
+        payload = make_response_payload()
+        payload["colors"] = ["青", "白", "黒", "グレー", "赤"]
+        response = Mock()
+        response.ok = True
+        response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(payload, ensure_ascii=False)
+                    }
+                }
+            ]
+        }
+        post.return_value = response
+
+        result = self.call_recommender()
+
+        self.assertEqual(result.colors, ("青", "白", "黒", "グレー", "赤"))
+        self.assertEqual(len(result.outfits), 5)
+
     def test_api_key_is_required_before_processing_image(self):
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaisesRegex(PhotoAnalysisError, "OPENAI_API_KEY"):

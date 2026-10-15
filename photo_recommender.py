@@ -197,7 +197,6 @@ def _parse_analysis(content: str) -> PhotoAnalysis:
         or not isinstance(item_type, str)
         or not isinstance(item_summary, str)
         or not isinstance(item_colors, list)
-        or len(item_colors) > 4
         or not all(isinstance(color, str) for color in item_colors)
         or not isinstance(outfits_data, list)
     ):
