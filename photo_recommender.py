@@ -167,10 +167,12 @@ def _prompt(
         "見えないブランド、素材、色、ロゴを断定しないでください。"
         "衣類が判別できない写真では garment_found=false、outfits=[] としてください。"
         "判別できる場合は、主役アイテムを使った異なる着こなしを必ず8案作ってください。"
-        "最初の2案はカジュアル系にし、style欄に「カジュアル」を含めてください。"
-        "1案はシンプルで日常向け、もう1案はストリート寄りのカジュアルにしてください。"
-        "残り6案のstyle欄には「カジュアル」と書かず、色・シルエット・テイストを変えてください。"
-        "好きなテイストがカジュアルの場合でも、style欄に「カジュアル」を含めるのは最初の2案だけにしてください。"
+        "8案すべてをきれいめカジュアルに統一し、各style欄は正確に「きれいめカジュアル」としてください。"
+        "色、シルエット、トップス・ボトムス・羽織りの組み合わせを変えて、各案に違いを出してください。"
+        "全案のaccessory欄に「ブラックスピネルのネックレス」を含めてください。"
+        "時計は各案で「セイコーの時計」か「ロンジンの自動巻き時計」のどちらか一つを選び、両方を同時につけないでください。"
+        "8案全体でセイコーとロンジンの時計を使い分けてください。"
+        "全案のshoes欄には「黒の厚底靴」を指定してください。"
         "天気欄が前年同月の平均気温なら、今日の実況・予報ではない季節参考値として扱ってください。"
         "前年同月の平均気温を参考に、気温に合う素材や羽織りで季節感を整えてください。"
         "降水・風・湿度が不明な場合、それらを推測して服装に反映しないでください。"
@@ -248,8 +250,29 @@ def _parse_analysis(content: str) -> PhotoAnalysis:
                 reason=outfit["reason"],
             )
         )
-    if sum("カジュアル" in outfit.style for outfit in outfits) != 2:
-        raise PhotoAnalysisError("カジュアル系を2案含むコーディネートを生成できませんでした。再度お試しください。")
+    if any(outfit.style != "きれいめカジュアル" for outfit in outfits):
+        raise PhotoAnalysisError("全案をきれいめカジュアルに統一できませんでした。再度お試しください。")
+    if any("ブラックスピネル" not in outfit.accessory for outfit in outfits):
+        raise PhotoAnalysisError("全案にブラックスピネルのネックレスを含められませんでした。再度お試しください。")
+    if any(
+        "厚底" not in outfit.shoes
+        or not any(color in outfit.shoes for color in ("黒", "ブラック"))
+        for outfit in outfits
+    ):
+        raise PhotoAnalysisError("全案に黒の厚底靴を合わせられませんでした。再度お試しください。")
+
+    accessories = [outfit.accessory for outfit in outfits]
+    if any(
+        ("セイコー" in accessory) == ("ロンジン" in accessory)
+        or ("ロンジン" in accessory and "自動巻き" not in accessory)
+        for accessory in accessories
+    ):
+        raise PhotoAnalysisError("各案にセイコーかロンジンの自動巻き時計を1本ずつ合わせてください。")
+    if not any("セイコー" in accessory for accessory in accessories) or not any(
+        "ロンジン" in accessory and "自動巻き" in accessory
+        for accessory in accessories
+    ):
+        raise PhotoAnalysisError("セイコーとロンジンの時計を両方含む提案を生成できませんでした。再度お試しください。")
     return PhotoAnalysis(True, item_type, item_summary, tuple(item_colors), tuple(outfits))
 
 

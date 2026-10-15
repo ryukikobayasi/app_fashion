@@ -52,7 +52,7 @@ def make_response_payload(outfit_count=8):
         outfits.append(
             {
                 "title": f"スタイル {index + 1}",
-                "style": "カジュアル" if index < 2 else "ストリート",
+                "style": "きれいめカジュアル",
                 "colors": [
                     {"name": "ネイビー", "hex": "#243956"},
                     {"name": "アイボリー", "hex": "#F1EBDD"},
@@ -61,8 +61,12 @@ def make_response_payload(outfit_count=8):
                 "top": "アップロードしたシャツ",
                 "bottom": "ワイドパンツ",
                 "outerwear": "ジャケット",
-                "shoes": "スニーカー",
-                "accessory": "ショルダーバッグ",
+                "shoes": "黒の厚底靴",
+                "accessory": (
+                    "ブラックスピネルのネックレスとセイコーの時計"
+                    if index % 2 == 0
+                    else "ブラックスピネルのネックレスとロンジンの自動巻き時計"
+                ),
                 "reason": "色のコントラストを活かした提案です。",
             }
         )
@@ -86,7 +90,7 @@ class PhotoRecommenderTests(unittest.TestCase):
         return recommend_from_photo(
             image_bytes=self.image_bytes,
             audience="ユニセックス",
-            preferred_style="おまかせ",
+            preferred_style="きれいめカジュアル",
             preferred_palette="おまかせ",
             today=date(2026, 10, 12),
             weather_context=weather_context,
@@ -114,7 +118,11 @@ class PhotoRecommenderTests(unittest.TestCase):
         self.assertTrue(result.garment_found)
         self.assertEqual(result.item_type, "シャツ")
         self.assertEqual(len(result.outfits), 8)
-        self.assertEqual(sum("カジュアル" in outfit.style for outfit in result.outfits), 2)
+        self.assertTrue(all(outfit.style == "きれいめカジュアル" for outfit in result.outfits))
+        self.assertTrue(all("ブラックスピネル" in outfit.accessory for outfit in result.outfits))
+        self.assertTrue(all("黒" in outfit.shoes and "厚底" in outfit.shoes for outfit in result.outfits))
+        self.assertTrue(any("セイコー" in outfit.accessory for outfit in result.outfits))
+        self.assertTrue(any("ロンジン" in outfit.accessory for outfit in result.outfits))
         self.assertEqual(len(result.outfits[0].colors), 3)
         post.assert_called_once()
         request = post.call_args.kwargs
@@ -127,8 +135,11 @@ class PhotoRecommenderTests(unittest.TestCase):
         self.assertEqual(body["model"], "gpt-4.1-mini")
         prompt = body["messages"][0]["content"][0]["text"]
         self.assertIn("8案", prompt)
-        self.assertIn("最初の2案はカジュアル系", prompt)
-        self.assertIn("style欄に「カジュアル」を含めるのは最初の2案だけ", prompt)
+        self.assertIn("8案すべてをきれいめカジュアルに統一", prompt)
+        self.assertIn("ブラックスピネルのネックレス", prompt)
+        self.assertIn("セイコーの時計", prompt)
+        self.assertIn("ロンジンの自動巻き時計", prompt)
+        self.assertIn("黒の厚底靴", prompt)
         self.assertIn("前年同月の平均気温", prompt)
         self.assertEqual(body["max_completion_tokens"], 5500)
         image_url = body["messages"][0]["content"][1]["image_url"]["url"]
@@ -229,7 +240,7 @@ class PhotoRecommenderTests(unittest.TestCase):
             result = recommend_from_photo(
                 image_bytes=self.image_bytes,
                 audience="ユニセックス",
-                preferred_style="おまかせ",
+                preferred_style="きれいめカジュアル",
                 preferred_palette="おまかせ",
                 today=date(2026, 10, 12),
                 weather_context=None,
@@ -335,10 +346,9 @@ class PhotoRecommenderTests(unittest.TestCase):
             self.call_recommender()
 
     @patch("photo_recommender.requests.post")
-    def test_response_must_contain_exactly_two_casual_outfits(self, post):
+    def test_response_must_use_smart_casual_style_for_all_outfits(self, post):
         payload = make_response_payload()
-        for outfit in payload["outfits"]:
-            outfit["style"] = "ストリート"
+        payload["outfits"][0]["style"] = "ストリート"
         response = Mock()
         response.ok = True
         response.json.return_value = {
@@ -348,7 +358,23 @@ class PhotoRecommenderTests(unittest.TestCase):
         }
         post.return_value = response
 
-        with self.assertRaisesRegex(PhotoAnalysisError, "カジュアル系を2案"):
+        with self.assertRaisesRegex(PhotoAnalysisError, "全案をきれいめカジュアル"):
+            self.call_recommender()
+
+    @patch("photo_recommender.requests.post")
+    def test_response_must_include_requested_necklace_shoes_and_watch_brands(self, post):
+        payload = make_response_payload()
+        payload["outfits"][0]["shoes"] = "白いスニーカー"
+        response = Mock()
+        response.ok = True
+        response.json.return_value = {
+            "choices": [
+                {"message": {"content": json.dumps(payload, ensure_ascii=False)}}
+            ]
+        }
+        post.return_value = response
+
+        with self.assertRaisesRegex(PhotoAnalysisError, "黒の厚底靴"):
             self.call_recommender()
 
     @patch("photo_recommender.requests.post")

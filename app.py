@@ -79,17 +79,17 @@ with st.sidebar:
         "着こなしのイメージ",
         options=["ユニセックス", "レディース", "メンズ"],
     )
-    preferred_style = st.selectbox(
-        "好きなテイスト",
-        options=["おまかせ", "カジュアル", "ストリート", "きれいめ", "スポーティ"],
-    )
+    preferred_style = "きれいめカジュアル"
     preferred_palette = st.selectbox(
         "好きなカラーコーデ",
         options=["おまかせ", "赤×ブルー", "モノトーン", "アースカラー", "ニュートラル"],
     )
     include_weather = st.checkbox("今日の天気も考慮する", value=True)
     city_name = st.selectbox("エリア", options=list(CITIES), index=0, disabled=not include_weather)
-    st.caption("写真のアイテムを使った8案を提案します（カジュアル系2案を含む）。")
+    st.caption(
+        "写真のアイテムを使った8案を、すべてきれいめカジュアルで提案します。"
+        "ブラックスピネルのネックレス、時計、黒の厚底靴を合わせます。"
+    )
     st.divider()
     api_key = os.environ.get("OPENAI_API_KEY", "")
     if api_key:
