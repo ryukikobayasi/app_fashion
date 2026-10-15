@@ -78,11 +78,13 @@ with st.sidebar:
     audience = st.selectbox(
         "着こなしのイメージ",
         options=["ユニセックス", "レディース", "メンズ"],
+        index=2,
     )
     preferred_style = "きれいめカジュアル"
     preferred_palette = st.selectbox(
         "好きなカラーコーデ",
         options=["おまかせ", "赤×ブルー", "モノトーン", "アースカラー", "ニュートラル"],
+        index=2,
     )
     include_weather = st.checkbox("今日の天気も考慮する", value=True)
     city_name = st.selectbox("エリア", options=list(CITIES), index=0, disabled=not include_weather)
