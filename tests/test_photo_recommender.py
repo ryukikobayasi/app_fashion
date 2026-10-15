@@ -46,13 +46,13 @@ def make_large_image(format_name, width=6000, height=4000):
     return output.getvalue()
 
 
-def make_response_payload(outfit_count=6):
+def make_response_payload(outfit_count=8):
     outfits = []
     for index in range(outfit_count):
         outfits.append(
             {
                 "title": f"スタイル {index + 1}",
-                "style": "ストリート",
+                "style": "カジュアル" if index < 2 else "ストリート",
                 "colors": [
                     {"name": "ネイビー", "hex": "#243956"},
                     {"name": "アイボリー", "hex": "#F1EBDD"},
@@ -82,19 +82,19 @@ class PhotoRecommenderTests(unittest.TestCase):
         self.addCleanup(self.api_key.stop)
         self.image_bytes = make_png()
 
-    def call_recommender(self):
+    def call_recommender(self, weather_context="東京、体感18°C"):
         return recommend_from_photo(
             image_bytes=self.image_bytes,
             audience="ユニセックス",
             preferred_style="おまかせ",
             preferred_palette="おまかせ",
             today=date(2026, 10, 12),
-            weather_context="東京、体感18°C",
+            weather_context=weather_context,
             seasonal_context="レトロスポーツ",
         )
 
     @patch("photo_recommender.requests.post")
-    def test_sends_resized_jpeg_and_returns_six_recommendations(self, post):
+    def test_sends_resized_jpeg_and_returns_eight_recommendations(self, post):
         image_response = Mock()
         image_response.ok = True
         image_response.json.return_value = {
@@ -113,7 +113,8 @@ class PhotoRecommenderTests(unittest.TestCase):
 
         self.assertTrue(result.garment_found)
         self.assertEqual(result.item_type, "シャツ")
-        self.assertEqual(len(result.outfits), 6)
+        self.assertEqual(len(result.outfits), 8)
+        self.assertEqual(sum("カジュアル" in outfit.style for outfit in result.outfits), 2)
         self.assertEqual(len(result.outfits[0].colors), 3)
         post.assert_called_once()
         request = post.call_args.kwargs
@@ -125,8 +126,11 @@ class PhotoRecommenderTests(unittest.TestCase):
         body = request["json"]
         self.assertEqual(body["model"], "gpt-4.1-mini")
         prompt = body["messages"][0]["content"][0]["text"]
-        self.assertIn("6案", prompt)
-        self.assertIn("デイリーカジュアル", prompt)
+        self.assertIn("8案", prompt)
+        self.assertIn("最初の2案はカジュアル系", prompt)
+        self.assertIn("style欄に「カジュアル」を含めるのは最初の2案だけ", prompt)
+        self.assertIn("前年同月の平均気温", prompt)
+        self.assertEqual(body["max_completion_tokens"], 5500)
         image_url = body["messages"][0]["content"][1]["image_url"]["url"]
         self.assertTrue(image_url.startswith("data:image/jpeg;base64,"))
         encoded_image = image_url.split(",", 1)[1]
@@ -136,6 +140,32 @@ class PhotoRecommenderTests(unittest.TestCase):
         schema = body["response_format"]["json_schema"]["schema"]
         self.assertNotIn("maxItems", json.dumps(schema))
         self.assertNotIn("minItems", json.dumps(schema))
+
+    @patch("photo_recommender.requests.post")
+    def test_historical_temperature_is_passed_as_a_reference_not_a_forecast(self, post):
+        response = Mock()
+        response.ok = True
+        response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(make_response_payload(), ensure_ascii=False)
+                    }
+                }
+            ]
+        }
+        post.return_value = response
+        historical_context = (
+            "前年同月（2025年10月）の平均気温 17.4°C"
+            "（今日の実況・予報ではない季節参考値。降水・風・湿度は不明）"
+        )
+
+        self.call_recommender(weather_context=historical_context)
+
+        prompt = post.call_args.kwargs["json"]["messages"][0]["content"][0]["text"]
+        self.assertIn(historical_context, prompt)
+        self.assertIn("今日の実況・予報ではない季節参考値", prompt)
+        self.assertIn("降水・風・湿度が不明な場合", prompt)
 
     @patch("photo_recommender.requests.post")
     def test_non_clothing_photo_returns_no_outfits(self, post):
@@ -173,7 +203,7 @@ class PhotoRecommenderTests(unittest.TestCase):
         result = self.call_recommender()
 
         self.assertEqual(result.colors, ("青", "白", "黒", "グレー", "赤"))
-        self.assertEqual(len(result.outfits), 6)
+        self.assertEqual(len(result.outfits), 8)
 
     def test_api_key_is_required_before_processing_image(self):
         with patch.dict(os.environ, {}, clear=True):
@@ -207,7 +237,7 @@ class PhotoRecommenderTests(unittest.TestCase):
                 api_key="ui-test-key",
             )
 
-        self.assertEqual(len(result.outfits), 6)
+        self.assertEqual(len(result.outfits), 8)
         self.assertEqual(
             post.call_args.kwargs["headers"]["Authorization"],
             "Bearer ui-test-key",
@@ -247,7 +277,7 @@ class PhotoRecommenderTests(unittest.TestCase):
         self.image_bytes = make_large_jpeg()
 
         result = self.call_recommender()
-        self.assertEqual(len(result.outfits), 6)
+        self.assertEqual(len(result.outfits), 8)
         image_url = post.call_args.kwargs["json"]["messages"][0]["content"][1]["image_url"]["url"]
         self.assertTrue(image_url.startswith("data:image/jpeg;base64,"))
         encoded = image_url.split(",", 1)[1]
@@ -284,7 +314,7 @@ class PhotoRecommenderTests(unittest.TestCase):
             self.call_recommender()
 
     @patch("photo_recommender.requests.post")
-    def test_response_must_contain_exactly_six_outfits(self, post):
+    def test_response_must_contain_exactly_eight_outfits(self, post):
         response = Mock()
         response.ok = True
         response.json.return_value = {
@@ -292,7 +322,7 @@ class PhotoRecommenderTests(unittest.TestCase):
                 {
                     "message": {
                         "content": json.dumps(
-                            make_response_payload(outfit_count=5),
+                            make_response_payload(outfit_count=7),
                             ensure_ascii=False,
                         )
                     }
@@ -301,7 +331,24 @@ class PhotoRecommenderTests(unittest.TestCase):
         }
         post.return_value = response
 
-        with self.assertRaisesRegex(PhotoAnalysisError, "6案"):
+        with self.assertRaisesRegex(PhotoAnalysisError, "8案"):
+            self.call_recommender()
+
+    @patch("photo_recommender.requests.post")
+    def test_response_must_contain_exactly_two_casual_outfits(self, post):
+        payload = make_response_payload()
+        for outfit in payload["outfits"]:
+            outfit["style"] = "ストリート"
+        response = Mock()
+        response.ok = True
+        response.json.return_value = {
+            "choices": [
+                {"message": {"content": json.dumps(payload, ensure_ascii=False)}}
+            ]
+        }
+        post.return_value = response
+
+        with self.assertRaisesRegex(PhotoAnalysisError, "カジュアル系を2案"):
             self.call_recommender()
 
     @patch("photo_recommender.requests.post")

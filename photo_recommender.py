@@ -166,9 +166,14 @@ def _prompt(
         "写真に人物が写っていても体型・年齢・性別を推測せず、服とアイテムだけを見てください。"
         "見えないブランド、素材、色、ロゴを断定しないでください。"
         "衣類が判別できない写真では garment_found=false、outfits=[] としてください。"
-        "判別できる場合は、主役アイテムをそれぞれ異なる着こなしにした6案を必ず作ってください。"
-        "6案のうち1案は必ず、日常で着やすいデイリーカジュアルにしてください。"
-        "残りの案は色、シルエット、テイストが互いに似すぎないようにし、"
+        "判別できる場合は、主役アイテムを使った異なる着こなしを必ず8案作ってください。"
+        "最初の2案はカジュアル系にし、style欄に「カジュアル」を含めてください。"
+        "1案はシンプルで日常向け、もう1案はストリート寄りのカジュアルにしてください。"
+        "残り6案のstyle欄には「カジュアル」と書かず、色・シルエット・テイストを変えてください。"
+        "好きなテイストがカジュアルの場合でも、style欄に「カジュアル」を含めるのは最初の2案だけにしてください。"
+        "天気欄が前年同月の平均気温なら、今日の実況・予報ではない季節参考値として扱ってください。"
+        "前年同月の平均気温を参考に、気温に合う素材や羽織りで季節感を整えてください。"
+        "降水・風・湿度が不明な場合、それらを推測して服装に反映しないでください。"
         "写真のアイテムを別の商品に置き換えないでください。"
         "性別・着こなし区分: "
         f"{audience}。好きなテイスト: {preferred_style}。配色方針: {palette}"
@@ -205,8 +210,8 @@ def _parse_analysis(content: str) -> PhotoAnalysis:
 
     if not garment_found:
         return PhotoAnalysis(False, item_type, item_summary, tuple(item_colors), ())
-    if len(outfits_data) != 6:
-        raise PhotoAnalysisError("6案のコーディネートを生成できませんでした。再度お試しください。")
+    if len(outfits_data) != 8:
+        raise PhotoAnalysisError("8案のコーディネートを生成できませんでした。再度お試しください。")
 
     outfits = []
     for outfit in outfits_data:
@@ -243,6 +248,8 @@ def _parse_analysis(content: str) -> PhotoAnalysis:
                 reason=outfit["reason"],
             )
         )
+    if sum("カジュアル" in outfit.style for outfit in outfits) != 2:
+        raise PhotoAnalysisError("カジュアル系を2案含むコーディネートを生成できませんでした。再度お試しください。")
     return PhotoAnalysis(True, item_type, item_summary, tuple(item_colors), tuple(outfits))
 
 
@@ -293,7 +300,7 @@ def recommend_from_photo(
                 "schema": _OUTFIT_SCHEMA,
             },
         },
-        "max_completion_tokens": 4500,
+        "max_completion_tokens": 5500,
     }
 
     try:

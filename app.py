@@ -19,7 +19,15 @@ from photo_recommender import (
     PhotoAnalysisError,
     recommend_from_photo,
 )
-from weather import CITIES, WeatherDataError, WeatherRateLimitError, get_weather
+from weather import (
+    CITIES,
+    HistoricalMonthlyAverage,
+    Weather,
+    WeatherDataError,
+    WeatherRateLimitError,
+    get_historical_monthly_average,
+    get_weather,
+)
 
 
 JST = timezone(timedelta(hours=9))
@@ -81,7 +89,7 @@ with st.sidebar:
     )
     include_weather = st.checkbox("今日の天気も考慮する", value=True)
     city_name = st.selectbox("エリア", options=list(CITIES), index=0, disabled=not include_weather)
-    st.caption("写真のアイテムを使った6案を提案します。")
+    st.caption("写真のアイテムを使った8案を提案します（カジュアル系2案を含む）。")
     st.divider()
     api_key = os.environ.get("OPENAI_API_KEY", "")
     if api_key:
@@ -101,7 +109,7 @@ with st.sidebar:
 
 today = datetime.now(JST).date()
 weekday = WEEKDAYS[today.weekday()]
-st.title("手持ちの服から、今日の6コーデ。", icon=":material/checkroom:")
+st.title("手持ちの服から、今日の8コーデ。", icon=":material/checkroom:")
 st.caption(
     f"FITTING / {today.year}年{today.month}月{today.day}日（{weekday}）"
     " · アイテム写真を読み取り、着回しコーデを提案"
@@ -155,26 +163,32 @@ else:
             st.caption("服全体が写っていて、色や形を確認できる明るい写真がおすすめです。")
             st.caption("複数の服が写っている場合は、組み合わせたいアイテムが分かる写真を選んでください。")
 
-weather = None
+weather: Weather | None = None
 weather_error = None
+historical_weather: HistoricalMonthlyAverage | None = None
+historical_weather_error = None
 if include_weather:
     try:
         weather = get_weather(city_name)
-        weather_by_city = st.session_state.get("last_weather_by_city", {})
-        weather_by_city[city_name] = weather
-        st.session_state["last_weather_by_city"] = weather_by_city
     except (requests.RequestException, WeatherDataError) as error:
         weather_error = error
-        weather = st.session_state.get("last_weather_by_city", {}).get(city_name)
+        try:
+            historical_weather = get_historical_monthly_average(
+                city_name,
+                today.year - 1,
+                today.month,
+            )
+        except (requests.RequestException, WeatherDataError) as historical_error:
+            historical_weather_error = historical_error
 
     with st.container(border=True):
-        st.markdown(f"**{city_name}の今日の天気**")
+        weather_heading = (
+            f"{city_name}の今日の天気"
+            if weather is not None
+            else f"{city_name}の天気・気温情報"
+        )
+        st.markdown(f"**{weather_heading}**")
         if weather is not None:
-            if weather_error:
-                st.warning(
-                    f"最新の天気を取得できないため、前回の取得値"
-                    f"（{weather.updated_at}）を表示しています。{weather_error}"
-                )
             st.caption(
                 f"現在 {weather.current_temperature:.0f}°C（体感 {weather.feels_like:.0f}°C）"
                 f" · 最高 {weather.high:.0f}°C / 最低 {weather.low:.0f}°C"
@@ -183,15 +197,47 @@ if include_weather:
                 f"降水確率 {weather.rain_probability}% · "
                 f"風速 {weather.wind_speed:.0f}km/h · 湿度 {weather.humidity}%"
             )
+        elif historical_weather is not None:
+            st.warning(
+                f"今日の天気を取得できないため、前年同月の平均気温を参考に提案します。"
+                f"（{weather_error}）"
+            )
+            st.caption(
+                f"{historical_weather.year}年{historical_weather.month}月の平均気温 "
+                f"{historical_weather.average_temperature:.1f}°C"
+                f"（{historical_weather.sample_days}日分。今日の実況・予報ではありません）"
+            )
+            st.caption("降水確率・風速・湿度は取得できていないため、服装には反映しません。")
         else:
-            st.warning(f"天気を取得できませんでした。天気なしで提案します。詳細: {weather_error}")
-            if isinstance(weather_error, WeatherRateLimitError):
+            st.warning("今日の天気と前年同月の平均気温を取得できませんでした。季節感をもとに提案します。")
+            st.caption(f"天気: {weather_error} · 前年同月平均: {historical_weather_error}")
+            if isinstance(weather_error, WeatherRateLimitError) or isinstance(
+                historical_weather_error,
+                WeatherRateLimitError,
+            ):
                 st.caption("アクセス制限中は再取得を止めています。時間をおいてページを再読み込みしてください。")
             elif st.button("天気を再取得", key="retry_weather", icon=":material/refresh:"):
                 get_weather.clear()
+                get_historical_monthly_average.clear()
                 st.rerun()
 
 today_trends = "、".join(seasonal_trends(today))
+weather_context = None
+if weather is not None:
+    weather_context = (
+        f"{weather.city}、現在{weather.current_temperature:.0f}°C、"
+        f"体感{weather.feels_like:.0f}°C、最高{weather.high:.0f}°C、"
+        f"最低{weather.low:.0f}°C、降水確率{weather.rain_probability}%、"
+        f"最大風速{weather.wind_speed:.0f}km/h、湿度{weather.humidity}%"
+    )
+elif historical_weather is not None:
+    weather_context = (
+        f"前年同月（{historical_weather.year}年{historical_weather.month}月）の平均気温 "
+        f"{historical_weather.average_temperature:.1f}°C"
+        f"（{historical_weather.sample_days}日分。今日の実況・予報ではない季節参考値。"
+        "降水・風・湿度は不明）"
+    )
+
 request_signature = hashlib.sha256(
     "|".join(
         (
@@ -202,6 +248,7 @@ request_signature = hashlib.sha256(
             today.isoformat(),
             str(include_weather),
             city_name if include_weather else "",
+            weather_context or "",
         )
     ).encode("utf-8")
 ).hexdigest()
@@ -212,7 +259,7 @@ if st.session_state.get("recommendation_signature") != request_signature:
     st.session_state.pop("outfit_images", None)
 
 if st.button(
-    "写真から6コーデを提案",
+    "写真から8コーデを提案",
     type="primary",
     icon=":material/auto_awesome:",
     disabled=photo_bytes is None,
@@ -223,17 +270,8 @@ if st.button(
             "左側の「OpenAI APIキー」に入力するか、環境変数に設定してください。"
         )
     else:
-        weather_context = None
-        if weather is not None:
-            weather_context = (
-                f"{weather.city}、現在{weather.current_temperature:.0f}°C、"
-                f"体感{weather.feels_like:.0f}°C、最高{weather.high:.0f}°C、"
-                f"最低{weather.low:.0f}°C、降水確率{weather.rain_probability}%、"
-                f"最大風速{weather.wind_speed:.0f}km/h、湿度{weather.humidity}%"
-            )
-
         try:
-            with st.spinner("写真のアイテムを読み取り、6つの着こなしを考えています..."):
+            with st.spinner("写真のアイテムを読み取り、8つの着こなしを考えています..."):
                 analysis = recommend_from_photo(
                     image_bytes=photo_bytes,
                     audience=audience,
@@ -261,7 +299,7 @@ if analysis is not None and st.session_state.get("recommendation_signature") == 
         if analysis.colors:
             st.caption(f"写真で確認した色: {'、'.join(analysis.colors)}")
 
-        st.subheader("このアイテムを使った6つのコーデ", icon=":material/checkroom:")
+        st.subheader("このアイテムを使った8つのコーデ", icon=":material/checkroom:")
         st.caption("各案のボタンを押すと画像を1枚生成します。生成ごとにAPI利用料が発生する場合があります。")
         columns = st.columns(3)
         for index, outfit in enumerate(analysis.outfits):

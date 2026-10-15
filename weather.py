@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from calendar import monthrange
+from datetime import date, datetime, timezone
 from email.utils import parsedate_to_datetime
 import math
 import threading
@@ -44,6 +45,15 @@ class Weather:
     updated_at: str
 
 
+@dataclass(frozen=True)
+class HistoricalMonthlyAverage:
+    city: str
+    year: int
+    month: int
+    average_temperature: float
+    sample_days: int
+
+
 CITIES = {
     "東京": City("東京", 35.6762, 139.6503),
     "札幌": City("札幌", 43.0618, 141.3545),
@@ -57,9 +67,10 @@ CITIES = {
 }
 
 _FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 _RATE_LIMIT_DEFAULT_SECONDS = 60
 _RATE_LIMIT_MAX_SECONDS = 3600
-_rate_limit_until: float = 0.0
+_rate_limit_until = {"forecast": 0.0, "archive": 0.0}
 _rate_limit_lock = threading.Lock()
 
 
@@ -99,16 +110,36 @@ def parse_weather(city_name: str, payload: dict) -> Weather:
         raise WeatherDataError("天気サービスから不完全なデータが返されました。") from error
 
 
-@st.cache_data(ttl="1h", max_entries=16)
-def get_weather(city_name: str) -> Weather:
-    global _rate_limit_until
+def parse_historical_monthly_average(
+    city_name: str,
+    year: int,
+    month: int,
+    payload: dict,
+) -> HistoricalMonthlyAverage:
+    try:
+        raw_values = payload["daily"]["temperature_2m_mean"]
+        if not isinstance(raw_values, list):
+            raise TypeError("temperature_2m_mean must be a list")
+        values = [float(value) for value in raw_values if value is not None]
+        values = [value for value in values if math.isfinite(value)]
+        if not values:
+            raise ValueError("No daily mean temperatures")
+        return HistoricalMonthlyAverage(
+            city=city_name,
+            year=year,
+            month=month,
+            average_temperature=math.fsum(values) / len(values),
+            sample_days=len(values),
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise WeatherDataError("前年の平均気温データを読み取れませんでした。") from error
 
-    city = CITIES.get(city_name)
-    if city is None:
-        raise ValueError(f"対応していない地域です: {city_name}")
 
+def _request_json(endpoint: str, params: dict, rate_limit_scope: str) -> dict:
     with _rate_limit_lock:
-        remaining = math.ceil(_rate_limit_until - time.monotonic())
+        remaining = math.ceil(
+            _rate_limit_until[rate_limit_scope] - time.monotonic()
+        )
     if remaining > 0:
         raise WeatherRateLimitError(remaining)
 
@@ -124,34 +155,82 @@ def get_weather(city_name: str) -> Weather:
     with requests.Session() as session:
         session.mount("https://", HTTPAdapter(max_retries=retry))
         response = session.get(
-            _FORECAST_URL,
-            params={
-                "latitude": city.latitude,
-                "longitude": city.longitude,
-                "current": (
-                    "temperature_2m,apparent_temperature,relative_humidity_2m,"
-                    "weather_code,wind_speed_10m"
-                ),
-                "daily": (
-                    "weather_code,temperature_2m_max,temperature_2m_min,"
-                    "precipitation_probability_max,wind_speed_10m_max"
-                ),
-                "forecast_days": 1,
-                "timezone": "Asia/Tokyo",
-            },
+            endpoint,
+            params=params,
             timeout=(5, 20),
         )
     if response.status_code == 429:
         retry_after = _retry_after_seconds(response.headers.get("Retry-After"))
         with _rate_limit_lock:
-            _rate_limit_until = max(_rate_limit_until, time.monotonic() + retry_after)
+            _rate_limit_until[rate_limit_scope] = max(
+                _rate_limit_until[rate_limit_scope],
+                time.monotonic() + retry_after,
+            )
         raise WeatherRateLimitError(retry_after)
     response.raise_for_status()
     try:
         payload = response.json()
     except requests.JSONDecodeError as error:
         raise WeatherDataError("天気サービスの応答を読み取れませんでした。") from error
+    if not isinstance(payload, dict):
+        raise WeatherDataError("天気サービスから不正なデータが返されました。")
+    return payload
+
+
+@st.cache_data(ttl="1h", max_entries=16)
+def get_weather(city_name: str) -> Weather:
+    city = CITIES.get(city_name)
+    if city is None:
+        raise ValueError(f"対応していない地域です: {city_name}")
+
+    payload = _request_json(
+        _FORECAST_URL,
+        {
+            "latitude": city.latitude,
+            "longitude": city.longitude,
+            "current": (
+                "temperature_2m,apparent_temperature,relative_humidity_2m,"
+                "weather_code,wind_speed_10m"
+            ),
+            "daily": (
+                "weather_code,temperature_2m_max,temperature_2m_min,"
+                "precipitation_probability_max,wind_speed_10m_max"
+            ),
+            "forecast_days": 1,
+            "timezone": "Asia/Tokyo",
+        },
+        "forecast",
+    )
     return parse_weather(city_name, payload)
+
+
+@st.cache_data(ttl="30d", max_entries=128)
+def get_historical_monthly_average(
+    city_name: str,
+    year: int,
+    month: int,
+) -> HistoricalMonthlyAverage:
+    city = CITIES.get(city_name)
+    if city is None:
+        raise ValueError(f"対応していない地域です: {city_name}")
+    if month < 1 or month > 12:
+        raise ValueError(f"対応していない月です: {month}")
+
+    start_date = date(year, month, 1)
+    end_date = date(year, month, monthrange(year, month)[1])
+    payload = _request_json(
+        _ARCHIVE_URL,
+        {
+            "latitude": city.latitude,
+            "longitude": city.longitude,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "daily": "temperature_2m_mean",
+            "timezone": "Asia/Tokyo",
+        },
+        "archive",
+    )
+    return parse_historical_monthly_average(city_name, year, month, payload)
 
 
 def describe_weather_code(code: int) -> str:
