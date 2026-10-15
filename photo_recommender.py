@@ -166,8 +166,9 @@ def _prompt(
         "写真に人物が写っていても体型・年齢・性別を推測せず、服とアイテムだけを見てください。"
         "見えないブランド、素材、色、ロゴを断定しないでください。"
         "衣類が判別できない写真では garment_found=false、outfits=[] としてください。"
-        "判別できる場合は、主役アイテムをそれぞれ異なる着こなしにした5案を必ず作ってください。"
-        "5案は色、シルエット、テイストが互いに似すぎないようにし、"
+        "判別できる場合は、主役アイテムをそれぞれ異なる着こなしにした6案を必ず作ってください。"
+        "6案のうち1案は必ず、日常で着やすいデイリーカジュアルにしてください。"
+        "残りの案は色、シルエット、テイストが互いに似すぎないようにし、"
         "写真のアイテムを別の商品に置き換えないでください。"
         "性別・着こなし区分: "
         f"{audience}。好きなテイスト: {preferred_style}。配色方針: {palette}"
@@ -204,8 +205,8 @@ def _parse_analysis(content: str) -> PhotoAnalysis:
 
     if not garment_found:
         return PhotoAnalysis(False, item_type, item_summary, tuple(item_colors), ())
-    if len(outfits_data) != 5:
-        raise PhotoAnalysisError("5案のコーディネートを生成できませんでした。再度お試しください。")
+    if len(outfits_data) != 6:
+        raise PhotoAnalysisError("6案のコーディネートを生成できませんでした。再度お試しください。")
 
     outfits = []
     for outfit in outfits_data:
@@ -292,7 +293,7 @@ def recommend_from_photo(
                 "schema": _OUTFIT_SCHEMA,
             },
         },
-        "max_completion_tokens": 3500,
+        "max_completion_tokens": 4500,
     }
 
     try:

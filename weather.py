@@ -1,4 +1,9 @@
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+import math
+import threading
+import time
 
 import requests
 import streamlit as st
@@ -8,6 +13,14 @@ from urllib3.util.retry import Retry
 
 class WeatherDataError(Exception):
     """Raised when the weather provider returns an unusable response."""
+
+
+class WeatherRateLimitError(WeatherDataError):
+    def __init__(self, retry_after_seconds: int):
+        self.retry_after_seconds = retry_after_seconds
+        super().__init__(
+            f"天気サービスのアクセス上限に達しました。約{retry_after_seconds}秒後に再取得できます。"
+        )
 
 
 @dataclass(frozen=True)
@@ -44,6 +57,26 @@ CITIES = {
 }
 
 _FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+_RATE_LIMIT_DEFAULT_SECONDS = 60
+_RATE_LIMIT_MAX_SECONDS = 3600
+_rate_limit_until: float = 0.0
+_rate_limit_lock = threading.Lock()
+
+
+def _retry_after_seconds(value: str | None) -> int:
+    if value:
+        try:
+            seconds = int(value)
+        except ValueError:
+            try:
+                retry_at = parsedate_to_datetime(value)
+                if retry_at.tzinfo is None:
+                    retry_at = retry_at.replace(tzinfo=timezone.utc)
+                seconds = math.ceil((retry_at - datetime.now(timezone.utc)).total_seconds())
+            except (TypeError, ValueError, OverflowError):
+                seconds = _RATE_LIMIT_DEFAULT_SECONDS
+        return min(max(seconds, 1), _RATE_LIMIT_MAX_SECONDS)
+    return _RATE_LIMIT_DEFAULT_SECONDS
 
 
 def parse_weather(city_name: str, payload: dict) -> Weather:
@@ -66,11 +99,18 @@ def parse_weather(city_name: str, payload: dict) -> Weather:
         raise WeatherDataError("天気サービスから不完全なデータが返されました。") from error
 
 
-@st.cache_data(ttl="30m", max_entries=16)
+@st.cache_data(ttl="1h", max_entries=16)
 def get_weather(city_name: str) -> Weather:
+    global _rate_limit_until
+
     city = CITIES.get(city_name)
     if city is None:
         raise ValueError(f"対応していない地域です: {city_name}")
+
+    with _rate_limit_lock:
+        remaining = math.ceil(_rate_limit_until - time.monotonic())
+    if remaining > 0:
+        raise WeatherRateLimitError(remaining)
 
     retry = Retry(
         total=2,
@@ -101,6 +141,11 @@ def get_weather(city_name: str) -> Weather:
             },
             timeout=(5, 20),
         )
+    if response.status_code == 429:
+        retry_after = _retry_after_seconds(response.headers.get("Retry-After"))
+        with _rate_limit_lock:
+            _rate_limit_until = max(_rate_limit_until, time.monotonic() + retry_after)
+        raise WeatherRateLimitError(retry_after)
     response.raise_for_status()
     try:
         payload = response.json()

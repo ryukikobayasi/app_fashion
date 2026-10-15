@@ -46,7 +46,7 @@ def make_large_image(format_name, width=6000, height=4000):
     return output.getvalue()
 
 
-def make_response_payload(outfit_count=5):
+def make_response_payload(outfit_count=6):
     outfits = []
     for index in range(outfit_count):
         outfits.append(
@@ -94,7 +94,7 @@ class PhotoRecommenderTests(unittest.TestCase):
         )
 
     @patch("photo_recommender.requests.post")
-    def test_sends_resized_jpeg_and_returns_five_recommendations(self, post):
+    def test_sends_resized_jpeg_and_returns_six_recommendations(self, post):
         image_response = Mock()
         image_response.ok = True
         image_response.json.return_value = {
@@ -113,7 +113,7 @@ class PhotoRecommenderTests(unittest.TestCase):
 
         self.assertTrue(result.garment_found)
         self.assertEqual(result.item_type, "シャツ")
-        self.assertEqual(len(result.outfits), 5)
+        self.assertEqual(len(result.outfits), 6)
         self.assertEqual(len(result.outfits[0].colors), 3)
         post.assert_called_once()
         request = post.call_args.kwargs
@@ -124,6 +124,9 @@ class PhotoRecommenderTests(unittest.TestCase):
         self.assertEqual(request["timeout"], (10, 90))
         body = request["json"]
         self.assertEqual(body["model"], "gpt-4.1-mini")
+        prompt = body["messages"][0]["content"][0]["text"]
+        self.assertIn("6案", prompt)
+        self.assertIn("デイリーカジュアル", prompt)
         image_url = body["messages"][0]["content"][1]["image_url"]["url"]
         self.assertTrue(image_url.startswith("data:image/jpeg;base64,"))
         encoded_image = image_url.split(",", 1)[1]
@@ -170,7 +173,7 @@ class PhotoRecommenderTests(unittest.TestCase):
         result = self.call_recommender()
 
         self.assertEqual(result.colors, ("青", "白", "黒", "グレー", "赤"))
-        self.assertEqual(len(result.outfits), 5)
+        self.assertEqual(len(result.outfits), 6)
 
     def test_api_key_is_required_before_processing_image(self):
         with patch.dict(os.environ, {}, clear=True):
@@ -204,7 +207,7 @@ class PhotoRecommenderTests(unittest.TestCase):
                 api_key="ui-test-key",
             )
 
-        self.assertEqual(len(result.outfits), 5)
+        self.assertEqual(len(result.outfits), 6)
         self.assertEqual(
             post.call_args.kwargs["headers"]["Authorization"],
             "Bearer ui-test-key",
@@ -244,7 +247,7 @@ class PhotoRecommenderTests(unittest.TestCase):
         self.image_bytes = make_large_jpeg()
 
         result = self.call_recommender()
-        self.assertEqual(len(result.outfits), 5)
+        self.assertEqual(len(result.outfits), 6)
         image_url = post.call_args.kwargs["json"]["messages"][0]["content"][1]["image_url"]["url"]
         self.assertTrue(image_url.startswith("data:image/jpeg;base64,"))
         encoded = image_url.split(",", 1)[1]
@@ -281,7 +284,7 @@ class PhotoRecommenderTests(unittest.TestCase):
             self.call_recommender()
 
     @patch("photo_recommender.requests.post")
-    def test_response_must_contain_exactly_five_outfits(self, post):
+    def test_response_must_contain_exactly_six_outfits(self, post):
         response = Mock()
         response.ok = True
         response.json.return_value = {
@@ -289,7 +292,7 @@ class PhotoRecommenderTests(unittest.TestCase):
                 {
                     "message": {
                         "content": json.dumps(
-                            make_response_payload(outfit_count=4),
+                            make_response_payload(outfit_count=5),
                             ensure_ascii=False,
                         )
                     }
@@ -298,7 +301,7 @@ class PhotoRecommenderTests(unittest.TestCase):
         }
         post.return_value = response
 
-        with self.assertRaisesRegex(PhotoAnalysisError, "5案"):
+        with self.assertRaisesRegex(PhotoAnalysisError, "6案"):
             self.call_recommender()
 
     @patch("photo_recommender.requests.post")

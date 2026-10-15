@@ -19,7 +19,7 @@ from photo_recommender import (
     PhotoAnalysisError,
     recommend_from_photo,
 )
-from weather import CITIES, WeatherDataError, get_weather
+from weather import CITIES, WeatherDataError, WeatherRateLimitError, get_weather
 
 
 JST = timezone(timedelta(hours=9))
@@ -73,7 +73,7 @@ with st.sidebar:
     )
     preferred_style = st.selectbox(
         "好きなテイスト",
-        options=["おまかせ", "ストリート", "きれいめ", "スポーティ"],
+        options=["おまかせ", "カジュアル", "ストリート", "きれいめ", "スポーティ"],
     )
     preferred_palette = st.selectbox(
         "好きなカラーコーデ",
@@ -81,7 +81,7 @@ with st.sidebar:
     )
     include_weather = st.checkbox("今日の天気も考慮する", value=True)
     city_name = st.selectbox("エリア", options=list(CITIES), index=0, disabled=not include_weather)
-    st.caption("写真のアイテムは5案すべてに取り入れます。")
+    st.caption("写真のアイテムを使った6案を提案します。")
     st.divider()
     api_key = os.environ.get("OPENAI_API_KEY", "")
     if api_key:
@@ -101,7 +101,7 @@ with st.sidebar:
 
 today = datetime.now(JST).date()
 weekday = WEEKDAYS[today.weekday()]
-st.title("手持ちの服から、今日の5コーデ。", icon=":material/checkroom:")
+st.title("手持ちの服から、今日の6コーデ。", icon=":material/checkroom:")
 st.caption(
     f"FITTING / {today.year}年{today.month}月{today.day}日（{weekday}）"
     " · アイテム写真を読み取り、着回しコーデを提案"
@@ -160,12 +160,21 @@ weather_error = None
 if include_weather:
     try:
         weather = get_weather(city_name)
+        weather_by_city = st.session_state.get("last_weather_by_city", {})
+        weather_by_city[city_name] = weather
+        st.session_state["last_weather_by_city"] = weather_by_city
     except (requests.RequestException, WeatherDataError) as error:
         weather_error = error
+        weather = st.session_state.get("last_weather_by_city", {}).get(city_name)
 
     with st.container(border=True):
         st.markdown(f"**{city_name}の今日の天気**")
         if weather is not None:
+            if weather_error:
+                st.warning(
+                    f"最新の天気を取得できないため、前回の取得値"
+                    f"（{weather.updated_at}）を表示しています。{weather_error}"
+                )
             st.caption(
                 f"現在 {weather.current_temperature:.0f}°C（体感 {weather.feels_like:.0f}°C）"
                 f" · 最高 {weather.high:.0f}°C / 最低 {weather.low:.0f}°C"
@@ -176,7 +185,9 @@ if include_weather:
             )
         else:
             st.warning(f"天気を取得できませんでした。天気なしで提案します。詳細: {weather_error}")
-            if st.button("天気を再取得", key="retry_weather", icon=":material/refresh:"):
+            if isinstance(weather_error, WeatherRateLimitError):
+                st.caption("アクセス制限中は再取得を止めています。時間をおいてページを再読み込みしてください。")
+            elif st.button("天気を再取得", key="retry_weather", icon=":material/refresh:"):
                 get_weather.clear()
                 st.rerun()
 
@@ -201,7 +212,7 @@ if st.session_state.get("recommendation_signature") != request_signature:
     st.session_state.pop("outfit_images", None)
 
 if st.button(
-    "写真から5コーデを提案",
+    "写真から6コーデを提案",
     type="primary",
     icon=":material/auto_awesome:",
     disabled=photo_bytes is None,
@@ -222,7 +233,7 @@ if st.button(
             )
 
         try:
-            with st.spinner("写真のアイテムを読み取り、5つの着こなしを考えています..."):
+            with st.spinner("写真のアイテムを読み取り、6つの着こなしを考えています..."):
                 analysis = recommend_from_photo(
                     image_bytes=photo_bytes,
                     audience=audience,
@@ -250,7 +261,7 @@ if analysis is not None and st.session_state.get("recommendation_signature") == 
         if analysis.colors:
             st.caption(f"写真で確認した色: {'、'.join(analysis.colors)}")
 
-        st.subheader("このアイテムを使った5つのコーデ", icon=":material/checkroom:")
+        st.subheader("このアイテムを使った6つのコーデ", icon=":material/checkroom:")
         st.caption("各案のボタンを押すと画像を1枚生成します。生成ごとにAPI利用料が発生する場合があります。")
         columns = st.columns(3)
         for index, outfit in enumerate(analysis.outfits):

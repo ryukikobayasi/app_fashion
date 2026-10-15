@@ -5,7 +5,7 @@ import requests
 from urllib3.util.retry import Retry
 
 import weather
-from weather import WeatherDataError, get_weather, parse_weather
+from weather import WeatherDataError, WeatherRateLimitError, get_weather, parse_weather
 
 
 def make_payload():
@@ -29,6 +29,8 @@ def make_payload():
 class WeatherTests(unittest.TestCase):
     def setUp(self):
         get_weather.clear()
+        with weather._rate_limit_lock:
+            weather._rate_limit_until = 0.0
         self.addCleanup(get_weather.clear)
 
     def test_parse_weather_maps_current_and_daily_forecast(self):
@@ -77,6 +79,25 @@ class WeatherTests(unittest.TestCase):
 
         with self.assertRaises(requests.HTTPError):
             get_weather("東京")
+
+    @patch("weather.requests.Session")
+    def test_rate_limit_is_not_retried_and_enters_a_shared_cooldown(self, session_factory):
+        session = Mock()
+        session.__enter__ = Mock(return_value=session)
+        session.__exit__ = Mock(return_value=False)
+        response = session.get.return_value
+        response.status_code = 429
+        response.headers = {"Retry-After": "120"}
+        session_factory.return_value = session
+
+        with self.assertRaises(WeatherRateLimitError) as first_error:
+            get_weather("東京")
+        with self.assertRaises(WeatherRateLimitError) as cooldown_error:
+            get_weather("大阪")
+
+        self.assertEqual(first_error.exception.retry_after_seconds, 120)
+        self.assertGreaterEqual(cooldown_error.exception.retry_after_seconds, 1)
+        session.get.assert_called_once()
 
 
 if __name__ == "__main__":
