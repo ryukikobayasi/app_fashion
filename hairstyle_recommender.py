@@ -86,10 +86,30 @@ _ANALYSIS_SCHEMA = {
     "additionalProperties": False,
 }
 
-_PROHIBITED_RECOMMENDATION_TERMS = re.compile(
-    r"パーマ|perm|カラー|染め|ブリーチ|脱色|ハイライト|バレイヤージュ",
+_CHEMICAL_TREATMENT_TERMS = re.compile(
+    r"パーマ|perm|ヘアカラー|カラーリング|カラー|染め|ブリーチ|脱色|"
+    r"ハイライト|バレイヤージュ|bleach|dye",
     re.IGNORECASE,
 )
+_NEGATED_CHEMICAL_TREATMENT_MENTION = re.compile(
+    r"なし|不要|必要(?:は)?ありません|必要ない|"
+    r"(?:し|入れ|かけ|あて|染め|施し|追加し|行い|使用し|使い|勧め|すすめ|推奨し)"
+    r"(?:ない|なく|ません|ず|ずに)|"
+    r"ではなく|ではない|避ける|避けて|せず|せぬ|ずに|ず|"
+    r"そのまま|(?:を)?(?:活かす|活かし|生かす|生かし|維持する|維持し)|"
+    r"変え(?:ない|ません|ず|ずに)|"
+    r"風(?:の|に|な)?|っぽい|のように|のような|"
+    r"\b(?:no|without|avoid|free|don't|do not)\b",
+    re.IGNORECASE,
+)
+
+
+def _has_chemical_treatment_suggestion(text: str) -> bool:
+    for match in _CHEMICAL_TREATMENT_TERMS.finditer(text):
+        following_text = text[match.end():match.end() + 20]
+        if not _NEGATED_CHEMICAL_TREATMENT_MENTION.search(following_text):
+            return True
+    return False
 
 
 def _prompt(today: date) -> str:
@@ -145,10 +165,12 @@ def _parse_recommendations(value: object) -> tuple[HairstyleRecommendation, ...]
                 "薬剤を使わない髪型の提案を生成できませんでした。再度お試しください。"
             )
 
-        text = " ".join(recommendation[field] for field in fields)
-        if _PROHIBITED_RECOMMENDATION_TERMS.search(text):
+        if any(
+            _has_chemical_treatment_suggestion(recommendation[field])
+            for field in fields
+        ):
             raise HairstyleAnalysisError(
-                "薬剤施術を含む提案が返されました。安全な髪型の提案を再度お試しください。"
+                "薬剤施術を勧める内容が返されました。薬剤施術を避けた内容で再度お試しください。"
             )
 
         recommendations.append(

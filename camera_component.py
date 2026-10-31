@@ -35,8 +35,9 @@ _CAMERA_CSS = """
 }
 .camera-frame {
   width: 100%;
+  max-width: 480px;
   aspect-ratio: 4 / 3;
-  max-height: 70vh;
+  max-height: 45vh;
   overflow: hidden;
   display: flex;
   align-items: center;

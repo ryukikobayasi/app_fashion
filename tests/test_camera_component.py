@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from camera_component import capture_camera_photo
+from camera_component import _CAMERA_CSS, capture_camera_photo
 
 
 class CameraComponentTests(unittest.TestCase):
@@ -28,6 +28,10 @@ class CameraComponentTests(unittest.TestCase):
     def test_rejects_unsupported_camera_direction(self):
         with self.assertRaisesRegex(ValueError, "initial_facing_mode"):
             capture_camera_photo(reset_token=0, initial_facing_mode="sideways")
+
+    def test_preview_size_is_capped_for_both_camera_modes(self):
+        self.assertIn("max-width: 480px;", _CAMERA_CSS)
+        self.assertIn("max-height: 45vh;", _CAMERA_CSS)
 
 
 if __name__ == "__main__":

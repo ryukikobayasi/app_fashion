@@ -141,6 +141,30 @@ class HairstyleRecommenderTests(unittest.TestCase):
         with self.assertRaisesRegex(HairstyleAnalysisError, "薬剤施術"):
             _parse_analysis(json.dumps(payload, ensure_ascii=False))
 
+    def test_allows_negated_treatment_mentions_but_blocks_active_services(self):
+        for safe_description in (
+            "パーマは不要です。ドライヤーで自然に整えます。",
+            "カラーを入れずに、今の髪色を活かします。",
+            "地毛のカラーを活かし、束感を出します。",
+            "カラーはそのままにします。",
+            "パーマ風の動きはワックスで作れます。",
+        ):
+            with self.subTest(description=safe_description):
+                payload = make_analysis_payload()
+                payload["current_hair_recommendations"][0]["styling"] = safe_description
+                _parse_analysis(json.dumps(payload, ensure_ascii=False))
+
+        for active_description in (
+            "ゆるいパーマをかけて動きを出します。",
+            "カラーを入れて明るくします。",
+            "髪を染めて印象を変えます。",
+        ):
+            with self.subTest(description=active_description):
+                payload = make_analysis_payload()
+                payload["current_hair_recommendations"][0]["styling"] = active_description
+                with self.assertRaisesRegex(HairstyleAnalysisError, "薬剤施術"):
+                    _parse_analysis(json.dumps(payload, ensure_ascii=False))
+
 
 if __name__ == "__main__":
     unittest.main()
