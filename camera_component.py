@@ -35,9 +35,9 @@ _CAMERA_CSS = """
 }
 .camera-frame {
   width: 100%;
-  max-width: 640px;
+  max-width: 800px;
   aspect-ratio: 4 / 3;
-  max-height: 45vh;
+  max-height: 60vh;
   margin-inline: auto;
   overflow: hidden;
   display: flex;
@@ -94,7 +94,7 @@ _CAMERA_CSS = """
     font-size: 16px;
   }
   .camera-frame {
-    max-height: 40vh;
+    max-height: 65vh;
   }
   .camera-controls button {
     min-height: 44px;
@@ -172,7 +172,7 @@ export default function (component) {
       )
       const heightLimit = Number.isFinite(maxHeight)
         ? maxHeight
-        : window.innerHeight * 0.45
+        : window.innerHeight * 0.6
       const width = Math.min(widthLimit, heightLimit * aspectRatio)
 
       if (!Number.isFinite(width) || width <= 0) {
@@ -201,9 +201,12 @@ export default function (component) {
         return
       }
 
+      const prefersPortrait = window.matchMedia("(max-width: 640px)").matches
+      const preferredDimensions = prefersPortrait
+        ? { width: { ideal: 720 }, height: { ideal: 1280 } }
+        : { width: { ideal: 1280 }, height: { ideal: 720 } }
       const videoOptions = {
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
+        ...preferredDimensions,
         facingMode: { exact: state.facingMode },
       }
 
@@ -221,10 +224,7 @@ export default function (component) {
           }
           usedFallbackCamera = true
           stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
-            },
+            video: preferredDimensions,
             audio: false,
           })
         }

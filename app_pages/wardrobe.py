@@ -1,5 +1,5 @@
 import hashlib
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from html import escape
 import os
 
@@ -7,7 +7,13 @@ import requests
 import streamlit as st
 
 from camera_component import CameraCaptureError, capture_camera_photo, decode_camera_photo
-from outfit_engine import TREND_AS_OF, TREND_SOURCES, seasonal_trends
+from outfit_engine import (
+    Outfit as RuleBasedOutfit,
+    TREND_AS_OF,
+    TREND_SOURCES,
+    recommend_outfits,
+    seasonal_trends,
+)
 from image_generator import ImageGenerationError, generate_outfit_image
 from photo_recommender import (
     MAX_IMAGE_BYTES,
@@ -32,6 +38,66 @@ from weather import (
 
 JST = timezone(timedelta(hours=9))
 WEEKDAYS = ("月", "火", "水", "木", "金", "土", "日")
+_MONTHLY_TEMPERATURE_ESTIMATES = (6, 7, 10, 15, 19, 23, 27, 29, 25, 19, 14, 9)
+
+
+def _recommendation_weather(
+    city_name: str,
+    today: date,
+    weather: Weather | None,
+    historical_weather: HistoricalMonthlyAverage | None,
+    include_weather: bool,
+) -> tuple[Weather, str | None]:
+    if weather is not None:
+        return weather, None
+
+    if historical_weather is not None:
+        temperature = historical_weather.average_temperature
+        note = (
+            f"今日の天気を取得できないため、前年同月の平均気温"
+            f"{temperature:.1f}°Cを季節参考値として使用します。降水・風・湿度は反映しません。"
+        )
+    else:
+        temperature = _MONTHLY_TEMPERATURE_ESTIMATES[today.month - 1]
+        note = (
+            "天気を考慮しない設定のため、月ごとの季節目安で重ね着を調整しています。"
+            if not include_weather
+            else "天気を取得できないため、月ごとの季節目安で重ね着を調整しています。"
+        )
+
+    return (
+        Weather(
+            city=city_name,
+            current_temperature=temperature,
+            feels_like=temperature,
+            humidity=50,
+            high=temperature + 3,
+            low=temperature - 3,
+            rain_probability=0,
+            wind_speed=0,
+            code=0,
+            updated_at=today.isoformat(),
+        ),
+        note,
+    )
+
+
+def render_color_swatches(colors: tuple[tuple[str, str], ...]) -> None:
+    swatches = "".join(
+        (
+            '<span style="display:inline-flex;align-items:center;gap:.4rem;'
+            'margin-right:.9rem;white-space:nowrap">'
+            f'<span aria-hidden="true" style="display:inline-block;width:1rem;'
+            f'height:1rem;border-radius:50%;background:{color_hex};'
+            'border:1px solid #888"></span>'
+            f"<span>{escape(color_name)}</span></span>"
+        )
+        for color_name, color_hex in colors
+    )
+    st.html(
+        '<div role="group" aria-label="おすすめ配色、ベース・サブカラー・差し色">'
+        f"{swatches}</div>"
+    )
 
 
 def render_outfit(outfit: OutfitRecommendation, number: int) -> None:
@@ -41,21 +107,7 @@ def render_outfit(outfit: OutfitRecommendation, number: int) -> None:
         st.subheader(outfit.title)
         st.caption(outfit.style)
         st.markdown(f"**色合わせ**　{' × '.join(name for name, _ in outfit.colors)}")
-        swatches = "".join(
-            (
-                '<span style="display:inline-flex;align-items:center;gap:.4rem;'
-                'margin-right:.9rem;white-space:nowrap">'
-                f'<span aria-hidden="true" style="display:inline-block;width:1rem;'
-                f'height:1rem;border-radius:50%;background:{color_hex};'
-                'border:1px solid #888"></span>'
-                f"<span>{escape(color_name)}</span></span>"
-            )
-            for color_name, color_hex in outfit.colors
-        )
-        st.html(
-            '<div role="group" aria-label="おすすめ配色、ベース・サブカラー・差し色">'
-            f"{swatches}</div>"
-        )
+        render_color_swatches(outfit.colors)
         for label, value in (
             ("インナー", outfit.inner),
             ("トップス", outfit.top),
@@ -68,6 +120,31 @@ def render_outfit(outfit: OutfitRecommendation, number: int) -> None:
         st.markdown(f"**プラスワン候補**　{outfit.extra_item}")
         st.caption(outfit.extra_item_reason)
         st.caption(outfit.reason)
+
+
+def render_rule_based_outfit(
+    outfit: RuleBasedOutfit,
+    number: int,
+    weather_reason: str | None,
+) -> None:
+    with st.container(border=True):
+        st.badge(f"LOOK {number:02}", color="red", icon=":material/checkroom:")
+        st.badge(outfit.trend, color="blue", icon=":material/style:")
+        st.subheader(outfit.title)
+        st.caption(outfit.style)
+        st.markdown(f"**色合わせ**　{' × '.join(name for name, _ in outfit.colors)}")
+        render_color_swatches(outfit.colors)
+        for label, value in (
+            ("トップス", outfit.top),
+            ("ボトムス", outfit.bottom),
+            ("羽織り", outfit.outerwear),
+            ("シューズ", outfit.shoes),
+            ("小物", outfit.accessory),
+        ):
+            st.text(f"{label}　{value}")
+        st.caption(outfit.color_tip)
+        if weather_reason:
+            st.caption(weather_reason)
 
 
 with st.sidebar:
@@ -88,7 +165,7 @@ with st.sidebar:
     st.caption(
         "写真のアイテムを主役に、表参道のハイストリートをイメージした8案を大胆に提案します。"
         "各案にインナーの重ね方と写真外のプラスワン候補を含めます。"
-        "ブラックスピネルのネックレス、時計、黒の厚底靴を合わせます。"
+        "写真がない場合も、天気・季節トレンドと選択条件から5案を自動提案します。"
     )
     st.divider()
     api_key = os.environ.get("OPENAI_API_KEY", "")
@@ -109,13 +186,13 @@ with st.sidebar:
 
 today = datetime.now(JST).date()
 weekday = WEEKDAYS[today.weekday()]
-st.title("手持ちの服から、今日の8コーデ。", icon=":material/checkroom:")
+st.title("今日のコーデを、条件から提案。", icon=":material/checkroom:")
 st.caption(
     f"FITTING / {today.year}年{today.month}月{today.day}日（{weekday}）"
-    " · アイテム写真を読み取り、着回しコーデを提案"
+    " · 写真があれば手持ちアイテムを活用し、写真なしでも天気・トレンドから提案"
 )
 
-st.subheader("服・ファッションアイテムの写真をアップロード")
+st.subheader("服・ファッションアイテムの写真を追加（任意）")
 capture_method = st.radio(
     "写真の取り込み方法",
     options=["ファイルから選択", "カメラで撮影"],
@@ -154,22 +231,23 @@ else:
         help="JPEG、PNG、WebP形式。最大8枚、1枚30MB以下、合計60MB以下。高解像度の写真は自動で縮小します。",
     ) or []
     candidate_photo_bytes = tuple(photo.getvalue() for photo in uploaded_photos)
-st.caption(
-    "選択した写真はすべて、提案ボタンを押すと画像解析のためOpenAI APIへ送信されます。"
-    "写真はファイルに保存せず、カメラ撮影分はセッション中だけ一時保持します。"
-    "写真が複数枚の場合、API利用料が増えることがあります。"
-)
+if not candidate_photo_bytes:
+    st.info(
+        "写真は任意です。写真を追加しなくても、天気・季節トレンド・選択した条件から"
+        "5案を自動提案します。写真なしのおすすめではOpenAI APIを使用しません。"
+    )
+else:
+    st.caption(
+        "選択した写真はすべて、提案ボタンを押すと画像解析のためOpenAI APIへ送信されます。"
+        "写真はファイルに保存せず、カメラ撮影分はセッション中だけ一時保持します。"
+        "写真が複数枚の場合、API利用料が増えることがあります。"
+    )
 
 photo_bytes: tuple[bytes, ...] | None = None
 photo_digest = ""
-if not candidate_photo_bytes:
-    if capture_method == "カメラで撮影":
-        st.info("アイテムを撮影し、「撮影した写真を追加」を押してください。")
-    else:
-        st.info("シャツ、パンツ、靴、バッグなど、コーデに使いたいアイテムの写真を選んでください。")
-elif len(candidate_photo_bytes) > MAX_PHOTO_COUNT:
+if candidate_photo_bytes and len(candidate_photo_bytes) > MAX_PHOTO_COUNT:
     st.error(f"写真は最大{MAX_PHOTO_COUNT}枚まで選択できます。")
-else:
+elif candidate_photo_bytes:
     oversized_photo = next(
         (
             index
@@ -284,6 +362,25 @@ elif historical_weather is not None:
         "降水・風・湿度は不明）"
     )
 
+no_photo_outfits: list[RuleBasedOutfit] = []
+no_photo_weather_note = None
+if not candidate_photo_bytes:
+    recommendation_weather, no_photo_weather_note = _recommendation_weather(
+        city_name,
+        today,
+        weather,
+        historical_weather,
+        include_weather,
+    )
+    no_photo_outfits = recommend_outfits(
+        recommendation_weather,
+        audience,
+        today,
+        count=5,
+        preferred_style="ストリート",
+        preferred_palette=preferred_palette,
+    )
+
 request_signature = hashlib.sha256(
     "|".join(
         (
@@ -304,11 +401,24 @@ if st.session_state.get("recommendation_signature") != request_signature:
     st.session_state.pop("recommendation_signature", None)
     st.session_state.pop("outfit_images", None)
 
-if st.button(
+if not candidate_photo_bytes:
+    st.subheader("写真なしの今日のおすすめ5コーデ", icon=":material/auto_awesome:")
+    st.caption("天気・季節トレンド・選択中のスタイルとカラーから自動提案します。")
+    if no_photo_weather_note:
+        st.info(no_photo_weather_note)
+    columns = st.columns(2)
+    for index, outfit in enumerate(no_photo_outfits):
+        with columns[index % len(columns)]:
+            render_rule_based_outfit(
+                outfit,
+                index + 1,
+                outfit.reason if weather is not None else None,
+            )
+
+if photo_bytes is not None and st.button(
     "写真から8コーデを提案",
     type="primary",
     icon=":material/auto_awesome:",
-    disabled=photo_bytes is None,
 ):
     if not api_key:
         st.error(

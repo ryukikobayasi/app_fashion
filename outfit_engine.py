@@ -521,7 +521,11 @@ def recommend_outfits(
     preferred_style: str = "おまかせ",
     preferred_palette: str = "おまかせ",
 ) -> list[Outfit]:
-    if audience not in _WARDROBE:
+    if audience == "ユニセックス":
+        wardrobe = _WARDROBE["メンズ"] + _WARDROBE["レディース"]
+    elif audience in _WARDROBE:
+        wardrobe = _WARDROBE[audience]
+    else:
         raise ValueError(f"対応していないスタイル区分です: {audience}")
     if count < 1 or count > 5:
         raise ValueError("おすすめ数は1〜5の範囲で指定してください。")
@@ -531,7 +535,7 @@ def recommend_outfits(
 
     active_trends = seasonal_trends(day)
     score_groups: dict[int, list[tuple[dict, str]]] = {}
-    for item in _WARDROBE[audience]:
+    for item in wardrobe:
         matching_trends = [trend for trend in item["trends"] if trend in active_trends]
         score = int(bool(matching_trends))
         if preferred_style == item["style"]:

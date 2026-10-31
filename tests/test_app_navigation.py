@@ -13,6 +13,24 @@ APP_FILE = Path(__file__).resolve().parents[1] / "app.py"
 
 
 class AppNavigationTests(unittest.TestCase):
+    def test_wardrobe_recommends_without_a_photo(self):
+        with (
+            patch("weather.get_weather", side_effect=WeatherDataError("offline")),
+            patch(
+                "weather.get_historical_monthly_average",
+                side_effect=WeatherDataError("offline"),
+            ),
+        ):
+            app = AppTest.from_file(str(APP_FILE), default_timeout=10).run()
+
+        self.assertFalse(app.exception, app.exception)
+        self.assertTrue(
+            any("写真なしの今日のおすすめ5コーデ" in title.value for title in app.subheader)
+        )
+        self.assertFalse(
+            any(button.label == "写真から8コーデを提案" for button in app.button)
+        )
+
     def test_bookmarks_page_is_registered_and_renders(self):
         with (
             patch("weather.get_weather", side_effect=WeatherDataError("offline")),
@@ -31,6 +49,7 @@ class AppNavigationTests(unittest.TestCase):
 
         self.assertFalse(app.exception, app.exception)
         self.assertTrue(any("お気に入りサイト" in title.value for title in app.title))
+        self.assertFalse(any("利用者全員で共有" in item.value for item in app.warning))
         load_bookmarks.assert_called_once()
 
     def test_bookmarks_page_renders_group_tabs_and_edit_forms(self):

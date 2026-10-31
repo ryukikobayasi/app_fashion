@@ -37,6 +37,19 @@ class OutfitEngineTests(unittest.TestCase):
                 )
                 self.assertEqual(len(outfits), 5)
 
+    def test_unisex_recommendations_mix_both_wardrobes(self):
+        outfits = recommend_outfits(
+            self.mild_weather,
+            "ユニセックス",
+            date(2026, 10, 12),
+            preferred_style="ストリート",
+            preferred_palette="モノトーン",
+        )
+
+        self.assertEqual(len(outfits), 5)
+        self.assertEqual(len({outfit.title for outfit in outfits}), 5)
+        self.assertTrue(all(outfit.color_style == "モノトーン" for outfit in outfits))
+
     def test_recommendations_change_between_consecutive_days(self):
         today = date(2026, 10, 12)
         tomorrow = date(2026, 10, 13)

@@ -126,11 +126,6 @@ def _render_bookmark(bookmark: Bookmark, tab_key: str) -> None:
 
 st.title("お気に入りサイト", icon=":material/bookmark:")
 st.caption("サイト名とグループを付けて保存し、グループごとのタブで整理できます。")
-st.warning(
-    "このリストは利用者全員で共有され、ログインなしで閲覧・追加・編集・削除できます。"
-    "保存先はTursoの外部SQLite互換データベースです。Renderの再起動・再デプロイでは消えません。"
-    "Turso側の利用枠・サービス条件は適用されます。"
-)
 
 delete_notice = st.session_state.pop(_DELETE_NOTICE_KEY, None)
 if delete_notice:
