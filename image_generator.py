@@ -2,14 +2,21 @@ import base64
 import binascii
 import os
 from io import BytesIO
+from typing import Literal
 
 import requests
 from PIL import Image, UnidentifiedImageError
 
-from photo_recommender import OutfitRecommendation
+from hairstyle_recommender import HairstyleRecommendation
+from photo_recommender import (
+    OutfitRecommendation,
+    PhotoAnalysisError,
+    normalize_photo_for_openai,
+)
 
 
 OPENAI_IMAGE_GENERATION_URL = "https://api.openai.com/v1/images/generations"
+OPENAI_IMAGE_EDIT_URL = "https://api.openai.com/v1/images/edits"
 DEFAULT_IMAGE_MODEL = "gpt-image-1"
 MAX_GENERATED_IMAGE_PIXELS = 20_000_000
 
@@ -44,39 +51,44 @@ def _build_prompt(
     )
 
 
-def generate_outfit_image(
-    item_type: str,
-    item_summary: str,
-    audience: str,
-    outfit: OutfitRecommendation,
-    api_key: str | None = None,
-) -> bytes:
-    api_key = api_key or os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        raise ImageGenerationError(
-            "OPENAI_API_KEYが設定されていません。APIキーを入力してから再度お試しください。"
+def _build_hairstyle_prompt(
+    hairstyle: HairstyleRecommendation,
+    category: Literal["current_hair", "salon_cut"],
+) -> str:
+    if category == "current_hair":
+        category_instructions = (
+            "Keep the person's current hair length and overall cut. "
+            "Show only the recommended styling technique, without a haircut."
         )
-
-    payload = {
-        "model": os.environ.get("OPENAI_IMAGE_MODEL", DEFAULT_IMAGE_MODEL),
-        "prompt": _build_prompt(item_type, item_summary, audience, outfit),
-        "size": "1024x1536",
-        "quality": "medium",
-        "output_format": "jpeg",
-        "n": 1,
-    }
-    try:
-        response = requests.post(
-            OPENAI_IMAGE_GENERATION_URL,
-            headers={"Authorization": f"Bearer {api_key}"},
-            json=payload,
-            timeout=(10, 120),
+    elif category == "salon_cut":
+        category_instructions = (
+            "Show the cut described in the salon request, keeping the person's identity "
+            "and natural hair color."
         )
-    except requests.RequestException as error:
-        raise ImageGenerationError(
-            "画像生成サービスに接続できませんでした。通信環境を確認してください。"
-        ) from error
+    else:
+        raise ValueError(f"Unsupported hairstyle category: {category}")
 
+    return (
+        "Create one photorealistic men's hairstyle consultation image using the attached selfie "
+        "as the visual reference. Show the same person in three equal vertical panels, arranged "
+        "from left to right: front view, side profile, and back-of-head view. Keep the haircut, "
+        "hairline, hair color, lighting, and background consistent across all three views. "
+        "Preserve the recognizable facial identity, skin tone, and visible head proportions of "
+        "the person in the reference as closely as possible; do not substitute another person. "
+        "Frame each view from the shoulders up so the hairstyle is clear. Use a simple neutral "
+        "background and realistic hair texture. Do not add text, labels, logos, watermarks, or "
+        "other people. "
+        f"{category_instructions} "
+        f"Hairstyle: {hairstyle.title}. "
+        f"Why it suits the person: {hairstyle.suitability_reason}. "
+        f"Styling: {hairstyle.styling}. "
+        f"Salon request: {hairstyle.salon_request}. "
+        f"Maintenance: {hairstyle.maintenance}. "
+        "Do not introduce a chemical hair treatment or change the person's hair color."
+    )
+
+
+def _decode_generated_image(response: requests.Response) -> bytes:
     if not response.ok:
         try:
             error_payload = response.json()
@@ -114,3 +126,82 @@ def generate_outfit_image(
         ) from error
 
     return image_bytes
+
+
+def generate_outfit_image(
+    item_type: str,
+    item_summary: str,
+    audience: str,
+    outfit: OutfitRecommendation,
+    api_key: str | None = None,
+) -> bytes:
+    api_key = api_key or os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise ImageGenerationError(
+            "OPENAI_API_KEYが設定されていません。APIキーを入力してから再度お試しください。"
+        )
+
+    payload = {
+        "model": os.environ.get("OPENAI_IMAGE_MODEL", DEFAULT_IMAGE_MODEL),
+        "prompt": _build_prompt(item_type, item_summary, audience, outfit),
+        "size": "1024x1536",
+        "quality": "medium",
+        "output_format": "jpeg",
+        "n": 1,
+    }
+    try:
+        response = requests.post(
+            OPENAI_IMAGE_GENERATION_URL,
+            headers={"Authorization": f"Bearer {api_key}"},
+            json=payload,
+            timeout=(10, 120),
+        )
+    except requests.RequestException as error:
+        raise ImageGenerationError(
+            "画像生成サービスに接続できませんでした。通信環境を確認してください。"
+        ) from error
+
+    return _decode_generated_image(response)
+
+
+def generate_hairstyle_triptych(
+    reference_photo: bytes,
+    hairstyle: HairstyleRecommendation,
+    category: Literal["current_hair", "salon_cut"],
+    api_key: str | None = None,
+) -> bytes:
+    api_key = api_key or os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise ImageGenerationError(
+            "OPENAI_API_KEYが設定されていません。APIキーを入力してから再度お試しください。"
+        )
+
+    try:
+        normalized_photo = normalize_photo_for_openai(reference_photo)
+    except PhotoAnalysisError as error:
+        raise ImageGenerationError(f"自撮り写真を準備できませんでした: {error}") from error
+
+    data = {
+        "model": os.environ.get("OPENAI_IMAGE_MODEL", DEFAULT_IMAGE_MODEL),
+        "prompt": _build_hairstyle_prompt(hairstyle, category),
+        "size": "1536x1024",
+        "quality": "medium",
+        "output_format": "jpeg",
+        "input_fidelity": "high",
+        "n": "1",
+    }
+    files = {"image": ("hairstyle-reference.jpg", normalized_photo, "image/jpeg")}
+    try:
+        response = requests.post(
+            OPENAI_IMAGE_EDIT_URL,
+            headers={"Authorization": f"Bearer {api_key}"},
+            data=data,
+            files=files,
+            timeout=(10, 180),
+        )
+    except requests.RequestException as error:
+        raise ImageGenerationError(
+            "髪型イメージ画像の生成サービスに接続できませんでした。通信環境を確認してください。"
+        ) from error
+
+    return _decode_generated_image(response)

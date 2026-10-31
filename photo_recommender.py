@@ -138,7 +138,7 @@ _PALETTE_GUIDANCE = {
 }
 
 
-def _prepare_photo(image_bytes: bytes) -> str:
+def normalize_photo_for_openai(image_bytes: bytes) -> bytes:
     if not image_bytes:
         raise PhotoAnalysisError("写真ファイルが空です。別の画像を選んでください。")
     if len(image_bytes) > MAX_IMAGE_BYTES:
@@ -171,7 +171,11 @@ def _prepare_photo(image_bytes: bytes) -> str:
             "画像を読み込めませんでした。JPEG、PNG、WebP形式の写真を選んでください。"
         ) from error
 
-    encoded = base64.b64encode(output.getvalue()).decode("ascii")
+    return output.getvalue()
+
+
+def _prepare_photo(image_bytes: bytes) -> str:
+    encoded = base64.b64encode(normalize_photo_for_openai(image_bytes)).decode("ascii")
     return f"data:image/jpeg;base64,{encoded}"
 
 

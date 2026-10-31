@@ -1,5 +1,6 @@
 import base64
 import binascii
+from typing import Literal
 
 import streamlit as st
 
@@ -23,7 +24,7 @@ _CAMERA_HTML = """
     <button id="camera-retake" type="button" hidden>撮り直す</button>
     <button id="camera-add" class="primary" type="button" hidden>撮影した写真を追加</button>
   </div>
-  <p id="camera-status" role="status" aria-live="polite">背面カメラを起動しています。</p>
+  <p id="camera-status" role="status" aria-live="polite">カメラを起動しています。</p>
 </div>
 """
 
@@ -338,10 +339,18 @@ class CameraCaptureError(ValueError):
     """Raised when a camera component result is malformed."""
 
 
-def capture_camera_photo(*, reset_token: int, key: str = "wardrobe-camera"):
+def capture_camera_photo(
+    *,
+    reset_token: int,
+    key: str = "wardrobe-camera",
+    initial_facing_mode: Literal["environment", "user"] = "environment",
+):
+    if initial_facing_mode not in ("environment", "user"):
+        raise ValueError("initial_facing_mode must be 'environment' or 'user'.")
+
     return _CAMERA_COMPONENT(
         key=key,
-        data={"reset_token": reset_token, "initial_facing_mode": "environment"},
+        data={"reset_token": reset_token, "initial_facing_mode": initial_facing_mode},
         on_photo_added_change=lambda: None,
     )
 

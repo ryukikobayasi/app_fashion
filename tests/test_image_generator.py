@@ -10,8 +10,11 @@ from PIL import Image
 from image_generator import (
     DEFAULT_IMAGE_MODEL,
     ImageGenerationError,
+    OPENAI_IMAGE_EDIT_URL,
     generate_outfit_image,
+    generate_hairstyle_triptych,
 )
+from hairstyle_recommender import HairstyleRecommendation
 from photo_recommender import OutfitRecommendation, RECOMMENDATION_STYLE
 
 
@@ -46,6 +49,13 @@ class ImageGeneratorTests(unittest.TestCase):
             extra_item="シルバーの細チェーン",
             extra_item_reason="顔まわりにさりげない輝きを加えます。",
             reason="ブルーシャツを主役にした着こなしです。",
+        )
+        self.hairstyle = HairstyleRecommendation(
+            title="ナチュラル・アップバング",
+            suitability_reason="顔まわりをすっきり見せます。",
+            styling="ドライヤーで前髪を立ち上げ、少量のワックスで整えます。",
+            salon_request="サイドを整え、前髪は自然に上げられる長さにします。",
+            maintenance="朝のドライヤーで形を作りやすいスタイルです。",
         )
 
     def make_success_response(self):
@@ -126,6 +136,72 @@ class ImageGeneratorTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ImageGenerationError, "有効な画像"):
             generate_outfit_image("シャツ", "青いシャツ", "ユニセックス", self.outfit)
+
+    @patch("image_generator.requests.post")
+    def test_generates_reference_based_three_view_hairstyle_preview(self, post):
+        post.return_value = self.make_success_response()
+
+        result = generate_hairstyle_triptych(
+            reference_photo=make_jpeg(),
+            hairstyle=self.hairstyle,
+            category="current_hair",
+            api_key="hairstyle-test-key",
+        )
+
+        self.assertEqual(result, self.generated_jpeg)
+        post.assert_called_once()
+        self.assertEqual(post.call_args.args[0], OPENAI_IMAGE_EDIT_URL)
+        request = post.call_args.kwargs
+        self.assertEqual(request["timeout"], (10, 180))
+        self.assertTrue(request["headers"]["Authorization"].endswith("hairstyle-test-key"))
+        payload = request["data"]
+        self.assertEqual(payload["model"], DEFAULT_IMAGE_MODEL)
+        self.assertEqual(payload["size"], "1536x1024")
+        self.assertEqual(payload["quality"], "medium")
+        self.assertEqual(payload["output_format"], "jpeg")
+        self.assertEqual(payload["input_fidelity"], "high")
+        self.assertEqual(payload["n"], "1")
+        self.assertIn("front view, side profile, and back-of-head view", payload["prompt"])
+        self.assertIn("same person", payload["prompt"])
+        self.assertIn(self.hairstyle.title, payload["prompt"])
+        self.assertIn("without a haircut", payload["prompt"])
+        filename, uploaded_photo, content_type = request["files"]["image"]
+        self.assertEqual(filename, "hairstyle-reference.jpg")
+        self.assertEqual(content_type, "image/jpeg")
+        with Image.open(BytesIO(uploaded_photo)) as normalized:
+            self.assertEqual(normalized.format, "JPEG")
+
+    @patch("image_generator.requests.post")
+    def test_salon_preview_uses_the_barber_order(self, post):
+        post.return_value = self.make_success_response()
+
+        generate_hairstyle_triptych(
+            reference_photo=make_jpeg(),
+            hairstyle=self.hairstyle,
+            category="salon_cut",
+            api_key="hairstyle-test-key",
+        )
+
+        prompt = post.call_args.kwargs["data"]["prompt"]
+        self.assertIn("Show the cut described in the salon request", prompt)
+        self.assertIn(self.hairstyle.salon_request, prompt)
+
+    def test_hairstyle_generation_requires_a_valid_key_and_photo(self):
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(ImageGenerationError, "OPENAI_API_KEY"):
+                generate_hairstyle_triptych(
+                    reference_photo=make_jpeg(),
+                    hairstyle=self.hairstyle,
+                    category="current_hair",
+                )
+
+        with self.assertRaisesRegex(ImageGenerationError, "自撮り写真"):
+            generate_hairstyle_triptych(
+                reference_photo=b"not an image",
+                hairstyle=self.hairstyle,
+                category="current_hair",
+                api_key="hairstyle-test-key",
+            )
 
 
 if __name__ == "__main__":
