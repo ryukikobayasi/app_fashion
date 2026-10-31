@@ -54,11 +54,11 @@ def make_response_payload(outfit_count=8):
             {
                 "title": f"スタイル {index + 1}",
                 "style": "きれいめカジュアル",
-                "colors": [
-                    {"name": "ネイビー", "hex": "#243956"},
-                    {"name": "アイボリー", "hex": "#F1EBDD"},
-                    {"name": "レッド", "hex": "#B52D45"},
-                ],
+                "colors": {
+                    "base": {"name": "ネイビー", "hex": "#243956"},
+                    "secondary": {"name": "アイボリー", "hex": "#F1EBDD"},
+                    "accent": {"name": "レッド", "hex": "#B52D45"},
+                },
                 "top": "アップロードしたシャツ",
                 "bottom": "ワイドパンツ",
                 "outerwear": "ジャケット",
@@ -152,6 +152,8 @@ class PhotoRecommenderTests(unittest.TestCase):
         schema = body["response_format"]["json_schema"]["schema"]
         self.assertNotIn("maxItems", json.dumps(schema))
         self.assertNotIn("minItems", json.dumps(schema))
+        color_schema = schema["properties"]["outfits"]["items"]["properties"]["colors"]
+        self.assertEqual(color_schema["required"], ["base", "secondary", "accent"])
 
     @patch("photo_recommender.requests.post")
     def test_sends_all_uploaded_photos_in_one_request(self, post):
@@ -426,9 +428,29 @@ class PhotoRecommenderTests(unittest.TestCase):
             self.call_recommender()
 
     @patch("photo_recommender.requests.post")
+    def test_missing_color_role_is_rejected(self, post):
+        payload = make_response_payload()
+        del payload["outfits"][0]["colors"]["accent"]
+        response = Mock()
+        response.ok = True
+        response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(payload, ensure_ascii=False)
+                    }
+                }
+            ]
+        }
+        post.return_value = response
+
+        with self.assertRaisesRegex(PhotoAnalysisError, "配色データが不完全"):
+            self.call_recommender()
+
+    @patch("photo_recommender.requests.post")
     def test_invalid_color_hex_is_rejected(self, post):
         payload = make_response_payload()
-        payload["outfits"][0]["colors"][0]["hex"] = "blue"
+        payload["outfits"][0]["colors"]["base"]["hex"] = "blue"
         response = Mock()
         response.ok = True
         response.json.return_value = {

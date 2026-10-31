@@ -48,6 +48,17 @@ class PhotoAnalysis:
     outfits: tuple[OutfitRecommendation, ...]
 
 
+_COLOR_ROLES = ("base", "secondary", "accent")
+_COLOR_ENTRY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string"},
+        "hex": {"type": "string"},
+    },
+    "required": ["name", "hex"],
+    "additionalProperties": False,
+}
+
 _OUTFIT_SCHEMA = {
     "type": "object",
     "properties": {
@@ -66,16 +77,10 @@ _OUTFIT_SCHEMA = {
                     "title": {"type": "string"},
                     "style": {"type": "string"},
                     "colors": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "name": {"type": "string"},
-                                "hex": {"type": "string"},
-                            },
-                            "required": ["name", "hex"],
-                            "additionalProperties": False,
-                        },
+                        "type": "object",
+                        "properties": {role: _COLOR_ENTRY_SCHEMA for role in _COLOR_ROLES},
+                        "required": list(_COLOR_ROLES),
+                        "additionalProperties": False,
                     },
                     "top": {"type": "string"},
                     "bottom": {"type": "string"},
@@ -213,7 +218,8 @@ def _prompt(
         f"{audience}。好きなテイスト: {preferred_style}。配色方針: {palette}"
         f" 今日の日付: {today.isoformat()}。天気: {weather}。"
         f"今季の海外トレンドテーマ: {seasonal_context}。"
-        "色は日本語名と、対応するHEXカラーを3色出してください。"
+        "各コーデのcolorsはbase・secondary・accentの3項目を持つオブジェクトにしてください。"
+        "各項目には日本語の色名nameと、#から始まる6桁のHEX値hexを必ず入れてください。"
         "reasonには、写真のアイテムが他の服や配色とどう合うかを簡潔に書いてください。"
         "回答は指定JSONスキーマに厳密に従い、日本語で記述してください。"
     )
@@ -252,11 +258,12 @@ def _parse_analysis(content: str) -> PhotoAnalysis:
         if not isinstance(outfit, dict):
             raise PhotoAnalysisError("画像解析サービスから不正なコーディネートが返されました。")
         colors = outfit.get("colors")
-        if not isinstance(colors, list) or len(colors) != 3:
+        if not isinstance(colors, dict) or set(colors) != set(_COLOR_ROLES):
             raise PhotoAnalysisError("コーディネートの配色データが不完全です。再度お試しください。")
 
         parsed_colors = []
-        for color in colors:
+        for role in _COLOR_ROLES:
+            color = colors[role]
             if (
                 not isinstance(color, dict)
                 or not isinstance(color.get("name"), str)
