@@ -89,6 +89,24 @@ _CAMERA_CSS = """
   color: var(--st-text-color, #262730);
   font-size: 0.9rem;
 }
+@media screen and (max-width: 640px) {
+  .camera-widget {
+    font-size: 16px;
+  }
+  .camera-frame {
+    max-height: 40vh;
+  }
+  .camera-controls button {
+    min-height: 44px;
+    flex: 1 1 calc(50% - 0.5rem);
+    padding: 0.65rem 0.75rem;
+    font-size: 16px;
+  }
+  #camera-status {
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+}
 """
 
 _CAMERA_JS = """

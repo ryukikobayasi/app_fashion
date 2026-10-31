@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from streamlit.testing.v1 import AppTest
 
+from bookmark_store import Bookmark
 from weather import WeatherDataError
 
 
@@ -31,6 +32,40 @@ class AppNavigationTests(unittest.TestCase):
         self.assertFalse(app.exception, app.exception)
         self.assertTrue(any("お気に入りサイト" in title.value for title in app.title))
         load_bookmarks.assert_called_once()
+
+    def test_bookmarks_page_renders_group_tabs_and_edit_forms(self):
+        bookmarks = [
+            Bookmark(
+                id=1,
+                url="https://fashion.example",
+                site_name="Fashion",
+                group_name="コーデ",
+            ),
+            Bookmark(
+                id=2,
+                url="https://hair.example",
+                site_name="Hair",
+                group_name="ヘア",
+            ),
+        ]
+        with (
+            patch("weather.get_weather", side_effect=WeatherDataError("offline")),
+            patch(
+                "weather.get_historical_monthly_average",
+                side_effect=WeatherDataError("offline"),
+            ),
+            patch(
+                "camera_component.capture_camera_photo",
+                return_value=SimpleNamespace(photo_added=None),
+            ),
+            patch("bookmark_store.load_bookmarks", return_value=bookmarks),
+        ):
+            app = AppTest.from_file(str(APP_FILE), default_timeout=10).run()
+            app.switch_page(str(Path("app_pages") / "bookmarks.py")).run()
+
+        self.assertFalse(app.exception, app.exception)
+        self.assertTrue(any(widget.label == "サイト名" for widget in app.text_input))
+        self.assertTrue(any(widget.label == "グループ" for widget in app.text_input))
 
     def test_hairstyle_page_is_registered_and_renders(self):
         with (

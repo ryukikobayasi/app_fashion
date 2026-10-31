@@ -1,5 +1,6 @@
 import os
 from collections.abc import Callable
+from dataclasses import dataclass
 from threading import RLock
 from typing import TypeVar
 from urllib.parse import urlsplit
@@ -8,13 +9,29 @@ import turso_serverless
 
 
 MAX_BOOKMARK_URL_LENGTH = 2048
+MAX_BOOKMARK_NAME_LENGTH = 100
+MAX_BOOKMARK_GROUP_LENGTH = 50
 MAX_BOOKMARKS = 1000
+DEFAULT_BOOKMARK_GROUP = "未分類"
+ALL_BOOKMARKS_TAB = "すべて"
 _DATABASE_LOCK = RLock()
 _Result = TypeVar("_Result")
 
 
+@dataclass(frozen=True)
+class Bookmark:
+    id: int
+    url: str
+    site_name: str
+    group_name: str
+
+
 class InvalidBookmarkUrl(ValueError):
     """Raised when a bookmark URL is not a valid HTTP(S) URL."""
+
+
+class InvalidBookmarkDetails(ValueError):
+    """Raised when a bookmark name or group is invalid."""
 
 
 class BookmarkLimitError(ValueError):
@@ -57,6 +74,33 @@ def normalize_bookmark_url(value: object) -> str:
     return url
 
 
+def _normalize_bookmark_details(
+    site_name: object,
+    group_name: object,
+    url: str,
+) -> tuple[str, str]:
+    if not isinstance(site_name, str):
+        raise InvalidBookmarkDetails("サイト名を文字列で入力してください。")
+    normalized_name = site_name.strip() or urlsplit(url).hostname or url
+    if len(normalized_name) > MAX_BOOKMARK_NAME_LENGTH:
+        raise InvalidBookmarkDetails(
+            f"サイト名は{MAX_BOOKMARK_NAME_LENGTH}文字以内で入力してください。"
+        )
+
+    if not isinstance(group_name, str):
+        raise InvalidBookmarkDetails("グループ名を文字列で入力してください。")
+    normalized_group = group_name.strip() or DEFAULT_BOOKMARK_GROUP
+    if len(normalized_group) > MAX_BOOKMARK_GROUP_LENGTH:
+        raise InvalidBookmarkDetails(
+            f"グループ名は{MAX_BOOKMARK_GROUP_LENGTH}文字以内で入力してください。"
+        )
+    if normalized_group == ALL_BOOKMARKS_TAB:
+        raise InvalidBookmarkDetails(
+            f"「{ALL_BOOKMARKS_TAB}」は一覧タブに使用しているため、グループ名にできません。"
+        )
+    return normalized_name, normalized_group
+
+
 def _open_turso_connection() -> turso_serverless.Connection:
     database_url = os.environ.get("TURSO_DATABASE_URL", "").strip()
     auth_token = os.environ.get("TURSO_AUTH_TOKEN", "").strip()
@@ -73,15 +117,37 @@ def _ensure_schema(connection: turso_serverless.Connection) -> None:
         """
         CREATE TABLE IF NOT EXISTS fitting_bookmarks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            url TEXT NOT NULL UNIQUE CHECK (length(url) <= 2048)
+            url TEXT NOT NULL UNIQUE CHECK (length(url) <= 2048),
+            site_name TEXT NOT NULL DEFAULT '',
+            group_name TEXT NOT NULL DEFAULT '未分類'
         )
         """
     )
+    columns = {
+        row[1]
+        for row in connection.execute(
+            "PRAGMA table_info(fitting_bookmarks)"
+        ).fetchall()
+    }
+    if "site_name" not in columns:
+        connection.execute(
+            "ALTER TABLE fitting_bookmarks "
+            "ADD COLUMN site_name TEXT NOT NULL DEFAULT ''"
+        )
+    if "group_name" not in columns:
+        connection.execute(
+            "ALTER TABLE fitting_bookmarks "
+            "ADD COLUMN group_name TEXT NOT NULL DEFAULT '未分類'"
+        )
 
 
-def _load_unlocked(connection: turso_serverless.Connection) -> list[str]:
+def _load_unlocked(connection: turso_serverless.Connection) -> list[Bookmark]:
     rows = connection.execute(
-        "SELECT url FROM fitting_bookmarks ORDER BY id DESC"
+        """
+        SELECT id, url, site_name, group_name
+        FROM fitting_bookmarks
+        ORDER BY id DESC
+        """
     ).fetchall()
     if len(rows) > MAX_BOOKMARKS:
         raise BookmarkStorageError(
@@ -91,10 +157,24 @@ def _load_unlocked(connection: turso_serverless.Connection) -> list[str]:
     bookmarks = []
     try:
         for row in rows:
-            bookmarks.append(normalize_bookmark_url(row[0]))
-    except (InvalidBookmarkUrl, IndexError, TypeError) as error:
+            bookmark_id = int(row[0])
+            url = normalize_bookmark_url(row[1])
+            site_name, group_name = _normalize_bookmark_details(
+                row[2],
+                row[3],
+                url,
+            )
+            bookmarks.append(
+                Bookmark(
+                    id=bookmark_id,
+                    url=url,
+                    site_name=site_name,
+                    group_name=group_name,
+                )
+            )
+    except (IndexError, TypeError, ValueError) as error:
         raise BookmarkStorageError(
-            "データベースに不正なURLが保存されているため読み込めませんでした。"
+            "データベースに不正なブックマーク情報が保存されているため読み込めませんでした。"
         ) from error
     return bookmarks
 
@@ -120,16 +200,27 @@ def _run_database(
         ) from error
 
 
-def load_bookmarks() -> list[str]:
+def load_bookmarks() -> list[Bookmark]:
     return _run_database(_load_unlocked)
 
 
-def add_bookmark(value: object) -> tuple[list[str], bool]:
+def add_bookmark(
+    value: object,
+    site_name: object = "",
+    group_name: object = DEFAULT_BOOKMARK_GROUP,
+) -> tuple[list[Bookmark], bool]:
     url = normalize_bookmark_url(value)
+    normalized_name, normalized_group = _normalize_bookmark_details(
+        site_name,
+        group_name,
+        url,
+    )
 
-    def add(connection: turso_serverless.Connection) -> tuple[list[str], bool]:
+    def add(
+        connection: turso_serverless.Connection,
+    ) -> tuple[list[Bookmark], bool]:
         bookmarks = _load_unlocked(connection)
-        if url in bookmarks:
+        if any(bookmark.url == url for bookmark in bookmarks):
             return bookmarks, False
         if len(bookmarks) >= MAX_BOOKMARKS:
             raise BookmarkLimitError(
@@ -138,18 +229,18 @@ def add_bookmark(value: object) -> tuple[list[str], bool]:
 
         cursor = connection.execute(
             """
-            INSERT OR IGNORE INTO fitting_bookmarks (url)
-            SELECT ? WHERE (
+            INSERT OR IGNORE INTO fitting_bookmarks (url, site_name, group_name)
+            SELECT ?, ?, ? WHERE (
                 SELECT COUNT(*) FROM fitting_bookmarks
             ) < ?
             """,
-            (url, MAX_BOOKMARKS),
+            (url, normalized_name, normalized_group, MAX_BOOKMARKS),
         )
         if cursor.rowcount == 1:
-            return [url, *bookmarks], True
+            return _load_unlocked(connection), True
 
         updated_bookmarks = _load_unlocked(connection)
-        if url in updated_bookmarks:
+        if any(bookmark.url == url for bookmark in updated_bookmarks):
             return updated_bookmarks, False
         raise BookmarkLimitError(
             f"URLは最大{MAX_BOOKMARKS}件まで登録できます。"
@@ -158,12 +249,40 @@ def add_bookmark(value: object) -> tuple[list[str], bool]:
     return _run_database(add)
 
 
-def delete_bookmark(value: object) -> tuple[list[str], bool]:
+def update_bookmark(
+    value: object,
+    site_name: object,
+    group_name: object,
+) -> bool:
+    url = normalize_bookmark_url(value)
+    normalized_name, normalized_group = _normalize_bookmark_details(
+        site_name,
+        group_name,
+        url,
+    )
+
+    def update(connection: turso_serverless.Connection) -> bool:
+        cursor = connection.execute(
+            """
+            UPDATE fitting_bookmarks
+            SET site_name = ?, group_name = ?
+            WHERE url = ?
+            """,
+            (normalized_name, normalized_group, url),
+        )
+        return cursor.rowcount == 1
+
+    return _run_database(update)
+
+
+def delete_bookmark(value: object) -> tuple[list[Bookmark], bool]:
     url = normalize_bookmark_url(value)
 
-    def delete(connection: turso_serverless.Connection) -> tuple[list[str], bool]:
+    def delete(
+        connection: turso_serverless.Connection,
+    ) -> tuple[list[Bookmark], bool]:
         bookmarks = _load_unlocked(connection)
-        if url not in bookmarks:
+        if not any(bookmark.url == url for bookmark in bookmarks):
             return bookmarks, False
 
         connection.execute(

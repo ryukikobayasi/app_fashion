@@ -8,13 +8,23 @@ from unittest.mock import patch
 import turso_serverless
 
 from bookmark_store import (
+    Bookmark,
     BookmarkLimitError,
     BookmarkStorageError,
+    InvalidBookmarkDetails,
     InvalidBookmarkUrl,
     add_bookmark,
     delete_bookmark,
     load_bookmarks,
+    update_bookmark,
 )
+
+
+def _bookmark_details(bookmarks: list[Bookmark]) -> list[tuple[str, str, str]]:
+    return [
+        (bookmark.url, bookmark.site_name, bookmark.group_name)
+        for bookmark in bookmarks
+    ]
 
 
 class BookmarkStoreTests(unittest.TestCase):
@@ -34,41 +44,122 @@ class BookmarkStoreTests(unittest.TestCase):
         self.assertEqual(load_bookmarks(), [])
 
     def test_add_normalizes_deduplicates_and_keeps_newest_first(self):
-        bookmarks, added = add_bookmark(" https://example.com ")
-        self.assertTrue(added)
-        self.assertEqual(bookmarks, ["https://example.com"])
-
-        bookmarks, added = add_bookmark("https://fashion.example")
+        bookmarks, added = add_bookmark(
+            " https://example.com ",
+            "Example",
+            "Style",
+        )
         self.assertTrue(added)
         self.assertEqual(
-            bookmarks,
-            ["https://fashion.example", "https://example.com"],
+            _bookmark_details(bookmarks),
+            [("https://example.com", "Example", "Style")],
         )
 
-        bookmarks, added = add_bookmark("https://example.com")
+        bookmarks, added = add_bookmark(
+            "https://fashion.example",
+            "Fashion",
+            "Shopping",
+        )
+        self.assertTrue(added)
+        self.assertEqual(
+            _bookmark_details(bookmarks),
+            [
+                ("https://fashion.example", "Fashion", "Shopping"),
+                ("https://example.com", "Example", "Style"),
+            ],
+        )
+
+        bookmarks, added = add_bookmark(
+            "https://example.com",
+            "Renamed",
+            "Other",
+        )
         self.assertFalse(added)
         self.assertEqual(
-            bookmarks,
-            ["https://fashion.example", "https://example.com"],
+            _bookmark_details(bookmarks),
+            [
+                ("https://fashion.example", "Fashion", "Shopping"),
+                ("https://example.com", "Example", "Style"),
+            ],
+        )
+
+    def test_empty_site_name_defaults_to_hostname_and_group(self):
+        bookmarks, added = add_bookmark("https://example.com")
+
+        self.assertTrue(added)
+        self.assertEqual(
+            _bookmark_details(bookmarks),
+            [("https://example.com", "example.com", "未分類")],
+        )
+
+    def test_update_changes_site_name_and_group(self):
+        add_bookmark("https://example.com", "Example", "未分類")
+
+        self.assertTrue(
+            update_bookmark("https://example.com", "Example Japan", "Fashion")
+        )
+        self.assertEqual(
+            _bookmark_details(load_bookmarks()),
+            [("https://example.com", "Example Japan", "Fashion")],
+        )
+        self.assertFalse(
+            update_bookmark("https://missing.example", "Missing", "Other")
         )
 
     def test_delete_removes_existing_url_and_reports_missing_url(self):
-        add_bookmark("https://example.com")
-        add_bookmark("https://fashion.example")
+        add_bookmark("https://example.com", "Example", "Style")
+        add_bookmark("https://fashion.example", "Fashion", "Shopping")
 
         bookmarks, deleted = delete_bookmark("https://example.com")
         self.assertTrue(deleted)
-        self.assertEqual(bookmarks, ["https://fashion.example"])
+        self.assertEqual(
+            _bookmark_details(bookmarks),
+            [("https://fashion.example", "Fashion", "Shopping")],
+        )
 
         bookmarks, deleted = delete_bookmark("https://example.com")
         self.assertFalse(deleted)
-        self.assertEqual(bookmarks, ["https://fashion.example"])
+        self.assertEqual(
+            _bookmark_details(bookmarks),
+            [("https://fashion.example", "Fashion", "Shopping")],
+        )
+
+    def test_migrates_existing_url_only_rows(self):
+        connection = sqlite3.connect(self.database_path)
+        try:
+            connection.execute(
+                """
+                CREATE TABLE fitting_bookmarks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    url TEXT NOT NULL UNIQUE CHECK (length(url) <= 2048)
+                )
+                """
+            )
+            connection.execute(
+                "INSERT INTO fitting_bookmarks (url) VALUES (?)",
+                ("https://legacy.example",),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        bookmarks = load_bookmarks()
+        self.assertEqual(
+            _bookmark_details(bookmarks),
+            [("https://legacy.example", "legacy.example", "未分類")],
+        )
 
     def test_rejects_non_http_urls(self):
         for url in ("", "ftp://example.com", "https://", "javascript:alert(1)"):
             with self.subTest(url=url):
                 with self.assertRaises(InvalidBookmarkUrl):
                     add_bookmark(url)
+
+    def test_rejects_reserved_or_too_long_group_names(self):
+        with self.assertRaises(InvalidBookmarkDetails):
+            add_bookmark("https://example.com", "Example", "すべて")
+        with self.assertRaises(InvalidBookmarkDetails):
+            add_bookmark("https://example.com", "Example", "x" * 51)
 
     def test_enforces_maximum_bookmark_count(self):
         with patch("bookmark_store.MAX_BOOKMARKS", 1):
