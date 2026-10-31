@@ -37,6 +37,24 @@ class OutfitEngineTests(unittest.TestCase):
                 )
                 self.assertEqual(len(outfits), 5)
 
+    def test_fifteen_recommendations_emphasize_clean_looks_for_each_audience(self):
+        for audience in ("メンズ", "レディース", "ユニセックス"):
+            with self.subTest(audience=audience):
+                outfits = recommend_outfits(
+                    self.mild_weather,
+                    audience,
+                    date(2026, 10, 12),
+                    count=15,
+                    preferred_style="きれいめ",
+                )
+
+                self.assertEqual(len(outfits), 15)
+                self.assertEqual(len({outfit.title for outfit in outfits}), 15)
+                self.assertGreaterEqual(
+                    sum(outfit.style == "きれいめ" for outfit in outfits),
+                    10,
+                )
+
     def test_unisex_recommendations_mix_both_wardrobes(self):
         outfits = recommend_outfits(
             self.mild_weather,
@@ -176,6 +194,29 @@ class OutfitEngineTests(unittest.TestCase):
                 self.assertTrue(all(outfit.color_style == "モノトーン" for outfit in outfits))
                 self.assertEqual(len({outfit.colors for outfit in outfits}), 5)
 
+    def test_fifteen_looks_support_monochrome_palette(self):
+        for audience in ("メンズ", "レディース", "ユニセックス"):
+            with self.subTest(audience=audience):
+                outfits = recommend_outfits(
+                    self.mild_weather,
+                    audience,
+                    date(2026, 10, 12),
+                    count=15,
+                    preferred_style="きれいめ",
+                    preferred_palette="モノトーン",
+                )
+
+                self.assertEqual(len(outfits), 15)
+                self.assertTrue(
+                    all(
+                        outfit.color_style == "モノトーン"
+                        and color.startswith("#")
+                        and len(color) == 7
+                        for outfit in outfits
+                        for _, color in outfit.colors
+                    )
+                )
+
     def test_invalid_palette_is_rejected(self):
         with self.assertRaises(ValueError):
             recommend_outfits(
@@ -189,7 +230,7 @@ class OutfitEngineTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             recommend_outfits(self.mild_weather, "全員", date(2026, 10, 12))
         with self.assertRaises(ValueError):
-            recommend_outfits(self.mild_weather, "メンズ", date(2026, 10, 12), 6)
+            recommend_outfits(self.mild_weather, "メンズ", date(2026, 10, 12), 16)
 
 
 if __name__ == "__main__":

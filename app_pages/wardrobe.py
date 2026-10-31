@@ -8,13 +8,18 @@ import streamlit as st
 
 from camera_component import CameraCaptureError, capture_camera_photo, decode_camera_photo
 from outfit_engine import (
+    MAX_RECOMMENDATION_COUNT,
     Outfit as RuleBasedOutfit,
     TREND_AS_OF,
     TREND_SOURCES,
     recommend_outfits,
     seasonal_trends,
 )
-from image_generator import ImageGenerationError, generate_outfit_image
+from image_generator import (
+    ImageGenerationError,
+    generate_outfit_image,
+    generate_rule_based_outfit_image,
+)
 from photo_recommender import (
     MAX_IMAGE_BYTES,
     MAX_PHOTO_COUNT,
@@ -165,7 +170,8 @@ with st.sidebar:
     st.caption(
         "写真のアイテムを主役に、表参道のハイストリートをイメージした8案を大胆に提案します。"
         "各案にインナーの重ね方と写真外のプラスワン候補を含めます。"
-        "写真がない場合も、天気・季節トレンドと選択条件から5案を自動提案します。"
+        "写真がない場合は、天気・季節トレンドと選択条件からきれいめ・表参道風を中心に"
+        f"{MAX_RECOMMENDATION_COUNT}案を自動提案します。"
     )
     st.divider()
     api_key = os.environ.get("OPENAI_API_KEY", "")
@@ -234,7 +240,8 @@ else:
 if not candidate_photo_bytes:
     st.info(
         "写真は任意です。写真を追加しなくても、天気・季節トレンド・選択した条件から"
-        "5案を自動提案します。写真なしのおすすめではOpenAI APIを使用しません。"
+        f"きれいめを中心に{MAX_RECOMMENDATION_COUNT}案を自動提案します。"
+        "コーデ提案時はOpenAI APIを使いません。AIイメージは各カードから個別に生成できます。"
     )
 else:
     st.caption(
@@ -376,8 +383,8 @@ if not candidate_photo_bytes:
         recommendation_weather,
         audience,
         today,
-        count=5,
-        preferred_style="ストリート",
+        count=MAX_RECOMMENDATION_COUNT,
+        preferred_style="きれいめ",
         preferred_palette=preferred_palette,
     )
 
@@ -402,8 +409,15 @@ if st.session_state.get("recommendation_signature") != request_signature:
     st.session_state.pop("outfit_images", None)
 
 if not candidate_photo_bytes:
-    st.subheader("写真なしの今日のおすすめ5コーデ", icon=":material/auto_awesome:")
-    st.caption("天気・季節トレンド・選択中のスタイルとカラーから自動提案します。")
+    st.subheader(
+        f"写真なしの今日のおすすめ{MAX_RECOMMENDATION_COUNT}コーデ",
+        icon=":material/auto_awesome:",
+    )
+    st.caption("きれいめ・表参道風を中心に、天気・季節トレンド・選択中のカラーから自動提案します。")
+    st.caption(
+        "各案のボタンを押すと、コーデ説明からAIイメージを1枚生成します。"
+        "写真は送信されず、生成ごとにAPI利用料が発生する場合があります。"
+    )
     if no_photo_weather_note:
         st.info(no_photo_weather_note)
     columns = st.columns(2)
@@ -414,6 +428,33 @@ if not candidate_photo_bytes:
                 index + 1,
                 outfit.reason if weather is not None else None,
             )
+            image_key = f"no_photo_look_{index + 1}"
+            if st.button(
+                "このコーデのイメージ画像を生成",
+                key=f"generate_no_photo_image_{request_signature}_{index}",
+                icon=":material/image:",
+            ):
+                try:
+                    with st.spinner("コーデのイメージ画像を生成しています..."):
+                        image_bytes = generate_rule_based_outfit_image(
+                            audience=audience,
+                            outfit=outfit,
+                            api_key=api_key,
+                        )
+                    generated_images = st.session_state.get("outfit_images", {})
+                    generated_images[image_key] = image_bytes
+                    st.session_state["outfit_images"] = generated_images
+                except (ImageGenerationError, requests.RequestException) as error:
+                    st.error(f"イメージ画像を作成できませんでした。{error}")
+
+            generated_image = st.session_state.get("outfit_images", {}).get(image_key)
+            if generated_image:
+                st.image(
+                    generated_image,
+                    caption=f"LOOK {index + 1:02} のAIイメージ",
+                    alt=f"{outfit.title}を着用した全身コーディネートのAIイメージ",
+                    width="stretch",
+                )
 
 if photo_bytes is not None and st.button(
     "写真から8コーデを提案",

@@ -13,6 +13,7 @@ TREND_SOURCES = (
     ),
     ("British Vogue · Autumn/Winter 2026", "https://www.vogue.co.uk/autumn-winter-2026"),
 )
+MAX_RECOMMENDATION_COUNT = 15
 
 
 @dataclass(frozen=True)
@@ -355,6 +356,215 @@ _WARDROBE = {
     ),
 }
 
+
+def _clean_look(
+    title: str,
+    trends: tuple[str, ...],
+    colors: tuple[tuple[str, str], ...],
+    color_style: str,
+    color_tip: str,
+    tops: tuple[str, str, str],
+    bottom: str,
+    outerwear: tuple[str, str, str],
+    shoes: str,
+    accessory: str,
+) -> dict:
+    return {
+        "title": title,
+        "style": "きれいめ",
+        "trends": trends,
+        "palette": " × ".join(name for name, _ in colors),
+        "colors": colors,
+        "color_style": color_style,
+        "color_tip": color_tip,
+        "hot_top": tops[0],
+        "mild_top": tops[1],
+        "cool_top": tops[2],
+        "bottom": bottom,
+        "light_outer": outerwear[0],
+        "mid_outer": outerwear[1],
+        "cold_outer": outerwear[2],
+        "shoes": shoes,
+        "accessory": accessory,
+    }
+
+
+_CLEAN_LOOK_VARIANTS = {
+    "メンズ": (
+        _clean_look(
+            title="表参道・ミニマルテーラード",
+            trends=("グレー×ワイン", "質感ミックス", "クリーンカラー"),
+            colors=(("チャコール", "#34353A"), ("ライトグレー", "#A7A8AD"), ("アイボリー", "#F2EEE7")),
+            color_style="ニュートラル",
+            color_tip="チャコールを軸にアイボリーを挟み、素材の違いで都会的な奥行きを。",
+            tops=("コットンニットポロ", "ハイゲージモックネック", "タートルニット"),
+            bottom="ワンタックのウールスラックス",
+            outerwear=("アンコンテーラードジャケット", "ダブルジャケット", "ロングチェスターコート"),
+            shoes="レザーローファー",
+            accessory="レザーベルト＋細身の腕時計",
+        ),
+        _clean_look(
+            title="クリーン・シャツレイヤード",
+            trends=("ライトレイヤード", "クリーンカラー", "プレッピーMIX"),
+            colors=(("ネイビー", "#243956"), ("オフホワイト", "#F3F0E9"), ("ブルーグレー", "#8195A9")),
+            color_style="ニュートラル",
+            color_tip="ネイビーとオフホワイトをベースに、シャツの重なりで軽さを出して。",
+            tops=("オープンカラーシャツ", "ブロードシャツ＋薄手ニット", "バンドカラーシャツ＋クルーネックニット"),
+            bottom="ワイドテーパードスラックス",
+            outerwear=("シャツジャケット", "ショートトレンチ", "ステンカラーコート"),
+            shoes="白のレザースニーカー",
+            accessory="スクエア型のミニショルダー",
+        ),
+        _clean_look(
+            title="ネイビー・トラッドシティ",
+            trends=("プレッピーMIX", "レトロスポーツ", "グレー×ワイン"),
+            colors=(("ネイビー", "#243956"), ("キャメル", "#B28B63"), ("バーガンディ", "#762E49")),
+            color_style="赤×ブルー",
+            color_tip="ネイビーとキャメルを主役に、バーガンディを小物で一点だけ効かせて。",
+            tops=("ポロシャツ", "オックスフォードシャツ＋ニットベスト", "ケーブルニット"),
+            bottom="ツータックのチノトラウザー",
+            outerwear=("コットンカーディガン", "ネイビーブレザー", "ダッフルコート"),
+            shoes="コインローファー",
+            accessory="細ベルト＋キャンバストート",
+        ),
+        _clean_look(
+            title="グレージュ・ワントーン",
+            trends=("グレー×ワイン", "質感ミックス", "モノトーンレイヤード"),
+            colors=(("グレージュ", "#B8B2AA"), ("チャコール", "#393A40"), ("パール", "#E7E0D8")),
+            color_style="モノトーン",
+            color_tip="グレージュからチャコールの濃淡をつなぎ、柔らかな質感を重ねて。",
+            tops=("ドライタッチの半袖ニット", "ハイゲージニット", "モックネックニット"),
+            bottom="落ち感のあるワイドスラックス",
+            outerwear=("ショートブルゾン", "ウールシャツジャケット", "グレージュのロングコート"),
+            shoes="ミニマルなレザースニーカー",
+            accessory="ミニレザーポーチ",
+        ),
+        _clean_look(
+            title="モダン・ニットポロ",
+            trends=("グレー×ワイン", "プレッピーMIX", "クリーンカラー"),
+            colors=(("スレート", "#62656D"), ("ネイビー", "#243956"), ("ワイン", "#713C56")),
+            color_style="ニュートラル",
+            color_tip="落ち着いた寒色を重ね、ワイン色を顔まわりに小さく足して。",
+            tops=("半袖ニットポロ", "長袖ニットポロ", "ハーフジップニット"),
+            bottom="センタープレスのストレートパンツ",
+            outerwear=("薄手カーディガン", "チェックのテーラードジャケット", "ウールピーコート"),
+            shoes="スエードローファー",
+            accessory="トーンを合わせたスカーフ",
+        ),
+        _clean_look(
+            title="クラシック・カーディガン",
+            trends=("ライトレイヤード", "クリーンカラー", "プレッピーMIX"),
+            colors=(("トープ", "#B9A899"), ("オリーブ", "#78816A"), ("クリーム", "#F1EBDD")),
+            color_style="アースカラー",
+            color_tip="トープとオリーブをなじませ、クリーム色で顔まわりを明るく。",
+            tops=("バンドカラーシャツ", "ハイゲージニット＋シャツ", "ラムウールカーディガン"),
+            bottom="タック入りワイドパンツ",
+            outerwear=("ミラノリブカーディガン", "コットンジャケット", "ミドル丈ステンカラーコート"),
+            shoes="スエードのチャッカシューズ",
+            accessory="レザーとナイロンのミニバッグ",
+        ),
+        _clean_look(
+            title="ライト・セットアップ",
+            trends=("クリーンカラー", "ライトレイヤード", "テック・ユーティリティ"),
+            colors=(("スレートブルー", "#64798E"), ("オフホワイト", "#F3F0E9"), ("チャコール", "#393A40")),
+            color_style="ニュートラル",
+            color_tip="セットアップの色数を抑え、白のインナーで抜け感をプラス。",
+            tops=("クールタッチTシャツ", "バンドカラーシャツ", "薄手のタートルニット"),
+            bottom="イージーケアのセットアップパンツ",
+            outerwear=("ライトセットアップジャケット", "アンコンジャケット", "撥水ウールコート"),
+            shoes="クリーンな白スニーカー",
+            accessory="スリムなクロスボディバッグ",
+        ),
+    ),
+    "レディース": (
+        _clean_look(
+            title="表参道・テーラードセットアップ",
+            trends=("グレー×ワイン", "質感ミックス", "クリーンカラー"),
+            colors=(("チャコール", "#34353A"), ("ライトグレー", "#A7A8AD"), ("アイボリー", "#F2EEE7")),
+            color_style="ニュートラル",
+            color_tip="チャコールの輪郭にアイボリーを合わせ、直線的なシルエットを軽やかに。",
+            tops=("シルクタッチの半袖ブラウス", "落ち感ブラウス＋ベスト", "ハイゲージニット"),
+            bottom="タック入りワイドスラックス",
+            outerwear=("テーラードジレ", "クロップドブレザー", "ロングチェスターコート"),
+            shoes="ポインテッドトゥのローファー",
+            accessory="ミニレザーバッグ＋メタルイヤリング",
+        ),
+        _clean_look(
+            title="シティトレンチ・レイヤード",
+            trends=("ライトレイヤード", "プレッピーMIX", "クリーンカラー"),
+            colors=(("ネイビー", "#243956"), ("パール", "#E7E0D8"), ("ブルーグレー", "#8195A9")),
+            color_style="ニュートラル",
+            color_tip="ネイビーのラインにパールカラーを重ね、すっきりした縦長シルエットに。",
+            tops=("コットンシャツ", "バンドカラーシャツ＋ニットベスト", "リブタートルニット"),
+            bottom="サテンのナロースカート",
+            outerwear=("ショート丈ブルゾン", "ベルト付きトレンチコート", "ロングウールコート"),
+            shoes="スクエアトゥのローファー",
+            accessory="細ベルト＋小さめショルダーバッグ",
+        ),
+        _clean_look(
+            title="グレージュ・セットアップ",
+            trends=("グレー×ワイン", "質感ミックス", "モノトーンレイヤード"),
+            colors=(("グレージュ", "#B8B2AA"), ("モカ", "#8B7565"), ("パール", "#E7E0D8")),
+            color_style="アースカラー",
+            color_tip="グレージュの濃淡をベースに、モカ色で素材の奥行きをつけて。",
+            tops=("シアーリブトップス", "ドレープブラウス", "ハイゲージタートルニット"),
+            bottom="セットアップのワイドパンツ",
+            outerwear=("ショートジャケット", "ノーカラージャケット", "ロングガウンコート"),
+            shoes="細ストラップのフラットシューズ",
+            accessory="小ぶりのレザーハンドバッグ",
+        ),
+        _clean_look(
+            title="サテン・ミニマル",
+            trends=("質感ミックス", "グレー×ワイン", "クリーンカラー"),
+            colors=(("シャンパン", "#D7C8B4"), ("ストーングレー", "#85868B"), ("ワイン", "#713C56")),
+            color_style="ニュートラル",
+            color_tip="光沢のあるサテンを一点に絞り、グレーとワインで品よくまとめて。",
+            tops=("サテンキャミソール＋シアーシャツ", "落ち感ブラウス", "リブニット"),
+            bottom="サテンのロングスカート",
+            outerwear=("薄手シャツジャケット", "ベルト付きテーラードジャケット", "ロングウールコート"),
+            shoes="ポインテッドトゥのフラットシューズ",
+            accessory="華奢なメタルアクセサリー",
+        ),
+        _clean_look(
+            title="プレッピー・シティ",
+            trends=("プレッピーMIX", "レトロスポーツ", "グレー×ワイン"),
+            colors=(("ネイビー", "#243956"), ("クリーム", "#F1EBDD"), ("バーガンディ", "#762E49")),
+            color_style="赤×ブルー",
+            color_tip="ネイビーとクリームの定番に、バーガンディを小面積で効かせて。",
+            tops=("ボーダーニットポロ", "ストライプシャツ＋ニットベスト", "ケーブルニット"),
+            bottom="プリーツ入りのミディスカート",
+            outerwear=("ニットベスト", "ダブルブレザー", "ミドル丈ダッフルコート"),
+            shoes="ローファー＋ソックス",
+            accessory="細フレームのアイウェア",
+        ),
+        _clean_look(
+            title="ニットレイヤード・リュクス",
+            trends=("ライトレイヤード", "質感ミックス", "クリーンカラー"),
+            colors=(("ブルーグレー", "#8195A9"), ("ライトグレー", "#A7A8AD"), ("オフホワイト", "#F3F0E9")),
+            color_style="ニュートラル",
+            color_tip="ブルーグレーとライトグレーを重ね、オフホワイトで柔らかく仕上げて。",
+            tops=("シアーインナー＋コンパクトニット", "シャツ＋ニットベスト", "ハイゲージのロングニット"),
+            bottom="センタープレスのワイドパンツ",
+            outerwear=("ショートカーディガン", "ロングジレ", "ボリュームスリーブコート"),
+            shoes="スクエアトゥのショートブーツ",
+            accessory="構築的なミニバッグ",
+        ),
+        _clean_look(
+            title="表参道・ワントーンモード",
+            trends=("モノトーンレイヤード", "質感ミックス", "オーバーサイズレイヤード"),
+            colors=(("ブラック", "#222228"), ("スレート", "#696A72"), ("パール", "#E7E0D8")),
+            color_style="モノトーン",
+            color_tip="黒とスレートの濃淡をつなぎ、パール色を顔まわりに一点置いて。",
+            tops=("コンパクトなリブトップス", "シアーブラウス", "ハイネックニット"),
+            bottom="落ち感のあるロングフレアスカート",
+            outerwear=("ショート丈ジャケット", "ロングジレ", "構築的なロングコート"),
+            shoes="ストラップシューズ",
+            accessory="メタルアクセサリー＋ミニバッグ",
+        ),
+    ),
+}
+
+
 _COLOR_PRESETS = {
     "赤×ブルー": (
         (("コバルトブルー", "#315FAD"), ("アイボリー", "#F1EBDD"), ("チェリーレッド", "#B52D45")),
@@ -513,6 +723,19 @@ def _reason(weather: Weather) -> str:
     return " / ".join(details)
 
 
+def _derived_monochrome_palette(colors: tuple[tuple[str, str], ...]) -> tuple[tuple[str, str], ...]:
+    shade_names = ("ベースグレー", "サブグレー", "アクセントグレー")
+    monochrome_colors = []
+    for index, (_, color_hex) in enumerate(colors):
+        red = int(color_hex[1:3], 16)
+        green = int(color_hex[3:5], 16)
+        blue = int(color_hex[5:7], 16)
+        luminance = round(0.2126 * red + 0.7152 * green + 0.0722 * blue)
+        shade = f"#{luminance:02X}{luminance:02X}{luminance:02X}"
+        monochrome_colors.append((shade_names[index], shade))
+    return tuple(monochrome_colors)
+
+
 def recommend_outfits(
     weather: Weather,
     audience: str,
@@ -522,16 +745,26 @@ def recommend_outfits(
     preferred_palette: str = "おまかせ",
 ) -> list[Outfit]:
     if audience == "ユニセックス":
-        wardrobe = _WARDROBE["メンズ"] + _WARDROBE["レディース"]
+        audiences = ("メンズ", "レディース")
     elif audience in _WARDROBE:
-        wardrobe = _WARDROBE[audience]
+        audiences = (audience,)
     else:
         raise ValueError(f"対応していないスタイル区分です: {audience}")
-    if count < 1 or count > 5:
-        raise ValueError("おすすめ数は1〜5の範囲で指定してください。")
+    if count < 1 or count > MAX_RECOMMENDATION_COUNT:
+        raise ValueError(f"おすすめ数は1〜{MAX_RECOMMENDATION_COUNT}の範囲で指定してください。")
     available_palettes = {*_COLOR_PRESETS, "モノトーン"}
     if preferred_palette != "おまかせ" and preferred_palette not in available_palettes:
         raise ValueError(f"対応していないカラーコーデです: {preferred_palette}")
+
+    wardrobe = []
+    for current_audience in audiences:
+        base_looks = _WARDROBE[current_audience]
+        clean_template = next(item for item in base_looks if item["style"] == "きれいめ")
+        wardrobe.extend(base_looks)
+        wardrobe.extend(
+            {**clean_template, **variant}
+            for variant in _CLEAN_LOOK_VARIANTS[current_audience]
+        )
 
     active_trends = seasonal_trends(day)
     score_groups: dict[int, list[tuple[dict, str]]] = {}
@@ -561,7 +794,12 @@ def recommend_outfits(
             color_style = item["color_style"]
             color_tip = item["color_tip"]
         elif preferred_palette == "モノトーン":
-            colors, color_tip = _MONO_PALETTES[item["title"]]
+            palette = _MONO_PALETTES.get(item["title"])
+            if palette is None:
+                colors = _derived_monochrome_palette(item["colors"])
+                color_tip = "明るさの異なるグレーを重ね、素材の質感で表情をつけて。"
+            else:
+                colors, color_tip = palette
             color_style = preferred_palette
         else:
             colors, color_tip = _COLOR_PRESETS[preferred_palette]

@@ -1,8 +1,12 @@
+import base64
+import os
 import unittest
+from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
+from PIL import Image
 from streamlit.testing.v1 import AppTest
 
 from bookmark_store import Bookmark
@@ -10,6 +14,14 @@ from weather import WeatherDataError
 
 
 APP_FILE = Path(__file__).resolve().parents[1] / "app.py"
+
+
+def make_jpeg():
+    image = Image.new("RGB", (16, 24), color="#7890ab")
+    output = BytesIO()
+    image.save(output, format="JPEG")
+    image.close()
+    return output.getvalue()
 
 
 class AppNavigationTests(unittest.TestCase):
@@ -25,11 +37,48 @@ class AppNavigationTests(unittest.TestCase):
 
         self.assertFalse(app.exception, app.exception)
         self.assertTrue(
-            any("写真なしの今日のおすすめ5コーデ" in title.value for title in app.subheader)
+            any("写真なしの今日のおすすめ15コーデ" in title.value for title in app.subheader)
         )
         self.assertFalse(
             any(button.label == "写真から8コーデを提案" for button in app.button)
         )
+        self.assertEqual(
+            sum(button.label == "このコーデのイメージ画像を生成" for button in app.button),
+            15,
+        )
+
+    def test_no_photo_image_is_generated_only_for_the_selected_look(self):
+        response = Mock()
+        response.ok = True
+        response.json.return_value = {
+            "data": [
+                {
+                    "b64_json": base64.b64encode(make_jpeg()).decode("ascii"),
+                }
+            ]
+        }
+        with (
+            patch.dict(os.environ, {"OPENAI_API_KEY": "test-image-key"}),
+            patch("weather.get_weather", side_effect=WeatherDataError("offline")),
+            patch(
+                "weather.get_historical_monthly_average",
+                side_effect=WeatherDataError("offline"),
+            ),
+            patch("image_generator.requests.post", return_value=response) as image_request,
+        ):
+            app = AppTest.from_file(str(APP_FILE), default_timeout=10).run()
+            image_request.assert_not_called()
+            image_button = next(
+                button
+                for button in app.button
+                if button.label == "このコーデのイメージ画像を生成"
+            )
+            image_button.click().run()
+
+        self.assertFalse(app.exception, app.exception)
+        image_request.assert_called_once()
+        prompt = image_request.call_args.kwargs["json"]["prompt"]
+        self.assertIn("No wardrobe photo was provided", prompt)
 
     def test_bookmarks_page_is_registered_and_renders(self):
         with (

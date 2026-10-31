@@ -7,11 +7,14 @@ from unittest.mock import Mock, patch
 
 from PIL import Image
 
+from outfit_engine import Outfit as RuleBasedOutfit
 from image_generator import (
     DEFAULT_IMAGE_MODEL,
     ImageGenerationError,
     OPENAI_IMAGE_EDIT_URL,
+    OPENAI_IMAGE_GENERATION_URL,
     generate_outfit_image,
+    generate_rule_based_outfit_image,
     generate_hairstyle_triptych,
 )
 from hairstyle_recommender import HairstyleRecommendation
@@ -101,6 +104,44 @@ class ImageGeneratorTests(unittest.TestCase):
         self.assertIn("シルバーの細チェーン", payload["prompt"])
         with Image.open(BytesIO(result)) as image:
             self.assertEqual(image.format, "JPEG")
+
+    @patch("image_generator.requests.post")
+    def test_generates_photo_free_image_from_the_selected_outfit(self, post):
+        post.return_value = self.make_success_response()
+        outfit = RuleBasedOutfit(
+            title="表参道・ミニマルテーラード",
+            style="きれいめ",
+            trend="グレー×ワイン",
+            palette="チャコール × ライトグレー × アイボリー",
+            colors=(
+                ("チャコール", "#34353A"),
+                ("ライトグレー", "#A7A8AD"),
+                ("アイボリー", "#F2EEE7"),
+            ),
+            color_style="ニュートラル",
+            color_tip="チャコールを軸にアイボリーを挟みます。",
+            top="ハイゲージモックネック",
+            bottom="ワンタックのウールスラックス",
+            outerwear="ダブルジャケット",
+            shoes="レザーローファー",
+            accessory="レザーベルト",
+            reason="今日の気温に合わせたレイヤードです。",
+        )
+
+        result = generate_rule_based_outfit_image("メンズ", outfit)
+
+        self.assertEqual(result, self.generated_jpeg)
+        request = post.call_args
+        self.assertEqual(request.args[0], OPENAI_IMAGE_GENERATION_URL)
+        payload = request.kwargs["json"]
+        self.assertEqual(payload["n"], 1)
+        self.assertIn("No wardrobe photo was provided", payload["prompt"])
+        self.assertIn("refined, clean silhouette", payload["prompt"])
+        self.assertIn("表参道・ミニマルテーラード", payload["prompt"])
+        self.assertIn("ハイゲージモックネック", payload["prompt"])
+        self.assertIn("ワンタックのウールスラックス", payload["prompt"])
+        self.assertIn("レザーローファー", payload["prompt"])
+        self.assertNotIn("Key item from the user's wardrobe photo", payload["prompt"])
 
     @patch("image_generator.requests.post")
     def test_model_can_be_overridden_by_environment(self, post):
