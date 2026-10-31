@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 
 from PIL import Image
 
-from outfit_engine import Outfit as RuleBasedOutfit
+from outfit_engine import OMOTESANDO_CLEAN_CASUAL_STYLE, Outfit as RuleBasedOutfit
 from image_generator import (
     DEFAULT_IMAGE_MODEL,
     ImageGenerationError,
@@ -110,7 +110,7 @@ class ImageGeneratorTests(unittest.TestCase):
         post.return_value = self.make_success_response()
         outfit = RuleBasedOutfit(
             title="表参道・ミニマルテーラード",
-            style="きれいめ",
+            style=OMOTESANDO_CLEAN_CASUAL_STYLE,
             trend="グレー×ワイン",
             palette="チャコール × ライトグレー × アイボリー",
             colors=(
@@ -136,7 +136,9 @@ class ImageGeneratorTests(unittest.TestCase):
         payload = request.kwargs["json"]
         self.assertEqual(payload["n"], 1)
         self.assertIn("No wardrobe photo was provided", payload["prompt"])
-        self.assertIn("refined, clean silhouette", payload["prompt"])
+        self.assertIn("refined, clean-casual silhouette", payload["prompt"])
+        self.assertIn("almost extravagantly", payload["prompt"])
+        self.assertIn("exaggerated but wearable proportions", payload["prompt"])
         self.assertIn("表参道・ミニマルテーラード", payload["prompt"])
         self.assertIn("ハイゲージモックネック", payload["prompt"])
         self.assertIn("ワンタックのウールスラックス", payload["prompt"])

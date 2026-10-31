@@ -13,6 +13,7 @@ TREND_SOURCES = (
     ),
     ("British Vogue · Autumn/Winter 2026", "https://www.vogue.co.uk/autumn-winter-2026"),
 )
+OMOTESANDO_CLEAN_CASUAL_STYLE = "表参道きれいめカジュアル"
 MAX_RECOMMENDATION_COUNT = 15
 
 
@@ -368,10 +369,11 @@ def _clean_look(
     outerwear: tuple[str, str, str],
     shoes: str,
     accessory: str,
+    style: str = "きれいめ",
 ) -> dict:
     return {
         "title": title,
-        "style": "きれいめ",
+        "style": style,
         "trends": trends,
         "palette": " × ".join(name for name, _ in colors),
         "colors": colors,
@@ -475,6 +477,71 @@ _CLEAN_LOOK_VARIANTS = {
             shoes="クリーンな白スニーカー",
             accessory="スリムなクロスボディバッグ",
         ),
+        _clean_look(
+            title="表参道・オーバーサイズテーラード",
+            trends=("オーバーサイズレイヤード", "質感ミックス", "クリーンカラー"),
+            colors=(("チャコール", "#34353A"), ("パール", "#E7E0D8"), ("ワイン", "#713C56")),
+            color_style="モノトーン",
+            color_tip="肩を落とした大きなジャケットに、細いワイン色を一点。丈の差を大胆に見せて。",
+            tops=("オーバーサイズの白T", "ロングシャツ＋ニットベスト", "ハイゲージモックネック"),
+            bottom="極太ワンタックのウールスラックス",
+            outerwear=("ショート丈ブルゾン", "ビッグシルエットのダブルジャケット", "ドレープ感のあるロングトレンチ"),
+            shoes="シャープな厚底レザーローファー",
+            accessory="大判スカーフ＋シルバーバングル",
+            style=OMOTESANDO_CLEAN_CASUAL_STYLE,
+        ),
+        _clean_look(
+            title="ショート丈・ロングレイヤード",
+            trends=("ライトレイヤード", "オーバーサイズレイヤード", "レトロスポーツ"),
+            colors=(("ネイビー", "#243956"), ("クリーム", "#F1EBDD"), ("チェリーレッド", "#B52D45")),
+            color_style="赤×ブルー",
+            color_tip="短丈アウターと長いインナーの差を強調。赤は小物だけにして、計算した抜け感を。",
+            tops=("ボックスT＋ロングシャツ", "ストライプシャツ＋ニットベスト", "タートルニット＋長めのシャツ"),
+            bottom="フルレングスのプリーツスラックス",
+            outerwear=("クロップドブルゾン", "ボクシーなブレザー", "ロングピーコート"),
+            shoes="厚底のレザースニーカー",
+            accessory="カラーフレームの眼鏡＋ミニバッグ",
+            style=OMOTESANDO_CLEAN_CASUAL_STYLE,
+        ),
+        _clean_look(
+            title="レザーシャツ・トーンミックス",
+            trends=("質感ミックス", "グレー×ワイン", "モノトーンレイヤード"),
+            colors=(("ブラック", "#222228"), ("スレート", "#696A72"), ("パール", "#E7E0D8")),
+            color_style="モノトーン",
+            color_tip="レザーの光沢とマットなニットをぶつけ、無彩色の濃淡で強くまとめて。",
+            tops=("リブタンク＋半袖シャツ", "薄手タートル＋レザーシャツ", "モックネック＋ロングシャツ"),
+            bottom="落ち感のあるワイドパンツ",
+            outerwear=("レザーシャツジャケット", "オーバーサイズレザーブルゾン", "ロングウールコート"),
+            shoes="スクエアトゥのレザーブーツ",
+            accessory="メタルチェーン＋ミニショルダー",
+            style=OMOTESANDO_CLEAN_CASUAL_STYLE,
+        ),
+        _clean_look(
+            title="アクセントレッド・プレッピー",
+            trends=("赤×ブルーの大胆配色", "プレッピーMIX", "レトロスポーツ"),
+            colors=(("ネイビー", "#243956"), ("アイボリー", "#F1EBDD"), ("チェリーレッド", "#B52D45")),
+            color_style="赤×ブルー",
+            color_tip="ネイビーの端正さに赤いソックスやタイを一点だけ。色の強さをあえて効かせて。",
+            tops=("ポロニット", "シャツ＋ニットタイ＋ベスト", "ケーブルニット＋白シャツ"),
+            bottom="ワイドシルエットのチノトラウザー",
+            outerwear=("ニットベスト", "オーバーサイズブレザー", "ロングピーコート"),
+            shoes="厚底のコインローファー",
+            accessory="チェリーレッドのソックス＋細ネクタイ",
+            style=OMOTESANDO_CLEAN_CASUAL_STYLE,
+        ),
+        _clean_look(
+            title="スカーフ・モードレイヤード",
+            trends=("グレー×ワイン", "質感ミックス", "オーバーサイズレイヤード"),
+            colors=(("トープ", "#B9A899"), ("チャコール", "#393A40"), ("ワイン", "#713C56")),
+            color_style="アースカラー",
+            color_tip="トープの柔らかさに、長いスカーフと異素材でドラマチックな縦ラインを。",
+            tops=("薄手タートル＋バンドカラーシャツ", "ニットポロ＋ロングシャツ", "モックネック＋シャツジャケット"),
+            bottom="深いタックのワイドスラックス",
+            outerwear=("ロングカーディガン", "オーバーサイズテーラード", "ベルト付きロングコート"),
+            shoes="ボリュームソールのレザーダービー",
+            accessory="ロングスカーフ＋片耳イヤーカフ",
+            style=OMOTESANDO_CLEAN_CASUAL_STYLE,
+        ),
     ),
     "レディース": (
         _clean_look(
@@ -560,6 +627,71 @@ _CLEAN_LOOK_VARIANTS = {
             outerwear=("ショート丈ジャケット", "ロングジレ", "構築的なロングコート"),
             shoes="ストラップシューズ",
             accessory="メタルアクセサリー＋ミニバッグ",
+        ),
+        _clean_look(
+            title="構築的テーラード・レイヤード",
+            trends=("オーバーサイズレイヤード", "質感ミックス", "クリーンカラー"),
+            colors=(("チャコール", "#34353A"), ("ライトグレー", "#A7A8AD"), ("パール", "#E7E0D8")),
+            color_style="モノトーン",
+            color_tip="肩の強いジャケットと柔らかなインナーを重ね、直線と揺れ感をぶつけて。",
+            tops=("アシンメトリーなカットソー", "シアーブラウス＋ベスト", "ハイネックの薄手ニット"),
+            bottom="ツータックの極太ワイドパンツ",
+            outerwear=("ショートテーラードジャケット", "ビッグシルエットのブレザー", "ロングチェスターコート"),
+            shoes="厚底のレザーローファー",
+            accessory="アシンメトリーなメタルイヤリング＋ミニバッグ",
+            style=OMOTESANDO_CLEAN_CASUAL_STYLE,
+        ),
+        _clean_look(
+            title="シャツ×ビスチェ・シティ",
+            trends=("ライトレイヤード", "クリーンカラー", "質感ミックス"),
+            colors=(("ネイビー", "#243956"), ("ブルーグレー", "#8195A9"), ("バーガンディ", "#762E49")),
+            color_style="ニュートラル",
+            color_tip="端正なシャツに立体的なビスチェを重ね、ウエストの位置を大胆に見せて。",
+            tops=("オーバーサイズ白シャツ＋ビスチェ", "ストライプシャツ＋ニットビスチェ", "シアーシャツ＋構築的ベスト"),
+            bottom="ハイウエストのワイドスラックス",
+            outerwear=("ショート丈ジャケット", "立体的なテーラードジャケット", "ロングトレンチコート"),
+            shoes="シャープなスクエアトゥブーツ",
+            accessory="幅広レザーベルト＋小さめショルダー",
+            style=OMOTESANDO_CLEAN_CASUAL_STYLE,
+        ),
+        _clean_look(
+            title="レッドポイント・プレッピー",
+            trends=("赤×ブルーの大胆配色", "プレッピーMIX", "レトロスポーツ"),
+            colors=(("ネイビー", "#243956"), ("クリーム", "#F1EBDD"), ("チェリーレッド", "#B52D45")),
+            color_style="赤×ブルー",
+            color_tip="クラシックな配色に、赤いソックスやバッグを大きめに効かせて印象を更新。",
+            tops=("ポロニット", "ストライプシャツ＋ニットベスト", "ケーブルニット＋白シャツ"),
+            bottom="プリーツ入りのロングスカート",
+            outerwear=("クロップドカーディガン", "オーバーサイズブレザー", "ロングダッフルコート"),
+            shoes="厚底ローファー＋カラーソックス",
+            accessory="チェリーレッドのミニバッグ＋スカーフ",
+            style=OMOTESANDO_CLEAN_CASUAL_STYLE,
+        ),
+        _clean_look(
+            title="サテン×ニット・マキシミックス",
+            trends=("質感ミックス", "グレー×ワイン", "オーバーサイズレイヤード"),
+            colors=(("ブラック", "#222228"), ("スレート", "#696A72"), ("ワイン", "#713C56")),
+            color_style="モノトーン",
+            color_tip="光沢のあるマキシ丈にざっくりニットを重ね、素材差を主役に。",
+            tops=("サテンキャミ＋シアーシャツ", "コンパクトニット＋ロングシャツ", "モックネック＋透け感トップス"),
+            bottom="サテンのマキシスカート",
+            outerwear=("ショート丈ブルゾン", "オーバーサイズカーディガン", "構築的なロングコート"),
+            shoes="ボリュームソールのショートブーツ",
+            accessory="ロングメタルネックレス＋ミニバッグ",
+            style=OMOTESANDO_CLEAN_CASUAL_STYLE,
+        ),
+        _clean_look(
+            title="ロングライン・モードカジュアル",
+            trends=("クリーンカラー", "オーバーサイズレイヤード", "質感ミックス"),
+            colors=(("トープ", "#B9A899"), ("オリーブ", "#78816A"), ("アイボリー", "#F2EEE7")),
+            color_style="アースカラー",
+            color_tip="長いジレとワイドパンツで縦のラインを作り、アイボリーで軽さを差して。",
+            tops=("コンパクトT＋ロングジレ", "シアーブラウス＋ロングベスト", "薄手タートル＋ロングジレ"),
+            bottom="フルレングスのワイドパンツ",
+            outerwear=("ロングジレ", "ベルト付きロングジャケット", "マキシ丈ウールコート"),
+            shoes="スクエアトゥの厚底ローファー",
+            accessory="幅広ベルト＋構築的なハンドバッグ",
+            style=OMOTESANDO_CLEAN_CASUAL_STYLE,
         ),
     ),
 }
@@ -771,7 +903,14 @@ def recommend_outfits(
     for item in wardrobe:
         matching_trends = [trend for trend in item["trends"] if trend in active_trends]
         score = int(bool(matching_trends))
-        if preferred_style == item["style"]:
+        is_clean_casual = item["style"] in {
+            "きれいめ",
+            OMOTESANDO_CLEAN_CASUAL_STYLE,
+        }
+        matches_preferred_style = preferred_style == item["style"]
+        if preferred_style == OMOTESANDO_CLEAN_CASUAL_STYLE:
+            matches_preferred_style = is_clean_casual
+        if matches_preferred_style:
             score += 2
         trend = matching_trends[0] if matching_trends else item["trends"][0]
         score_groups.setdefault(score, []).append((item, trend))
@@ -817,7 +956,12 @@ def recommend_outfits(
         results.append(
             Outfit(
                 title=item["title"],
-                style=item["style"],
+                style=(
+                    OMOTESANDO_CLEAN_CASUAL_STYLE
+                    if preferred_style == OMOTESANDO_CLEAN_CASUAL_STYLE
+                    and item["style"] in {"きれいめ", OMOTESANDO_CLEAN_CASUAL_STYLE}
+                    else item["style"]
+                ),
                 trend=trend,
                 palette=palette,
                 colors=colors,

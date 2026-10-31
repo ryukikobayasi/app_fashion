@@ -32,8 +32,8 @@ class ImageGenerationError(Exception):
 
 
 def _build_prompt(
-    item_type: str,
-    item_summary: str,
+    item_type: str | None,
+    item_summary: str | None,
     audience: str,
     outfit: OutfitRecommendation,
 ) -> str:
@@ -41,7 +41,10 @@ def _build_prompt(
     if item_type or item_summary:
         style_instruction = (
             "Create one bold, photorealistic Japanese fashion editorial image inspired by "
-            "Omotesando high-street style. "
+            "Omotesando high-street clean-casual style. Push the look almost extravagantly "
+            "with exaggerated but wearable proportions, strong layered lengths, unexpected "
+            "fabric contrasts, and a decisive statement accessory; keep it polished street "
+            "fashion, not a costume. "
         )
         item_context = (
             f"Key item from the user's wardrobe photo: {item_type}, {item_summary}. "
@@ -49,7 +52,10 @@ def _build_prompt(
     else:
         style_instruction = (
             "Create one polished, photorealistic Japanese fashion editorial image with a "
-            "refined, clean silhouette inspired by Omotesando high-street style. "
+            "refined, clean-casual silhouette inspired by Omotesando high-street style. "
+            "Push the styling almost extravagantly with exaggerated but wearable proportions, "
+            "strong layered lengths, unexpected fabric contrasts, and a decisive statement "
+            "accessory; keep it polished street fashion, not a costume. "
         )
         item_context = (
             "No wardrobe photo was provided; style the complete outfit from the written "

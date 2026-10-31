@@ -9,6 +9,7 @@ import streamlit as st
 from camera_component import CameraCaptureError, capture_camera_photo, decode_camera_photo
 from outfit_engine import (
     MAX_RECOMMENDATION_COUNT,
+    OMOTESANDO_CLEAN_CASUAL_STYLE,
     Outfit as RuleBasedOutfit,
     TREND_AS_OF,
     TREND_SOURCES,
@@ -168,9 +169,10 @@ with st.sidebar:
     include_weather = st.checkbox("今日の天気も考慮する", value=True)
     city_name = st.selectbox("エリア", options=list(CITIES), index=0, disabled=not include_weather)
     st.caption(
-        "写真のアイテムを主役に、表参道のハイストリートをイメージした8案を大胆に提案します。"
+        "写真のアイテムを主役に、表参道のきれいめカジュアルを軸にした8案を提案します。"
+        "シルエット・素材ミックス・レイヤードは大胆に仕上げます。"
         "各案にインナーの重ね方と写真外のプラスワン候補を含めます。"
-        "写真がない場合は、天気・季節トレンドと選択条件からきれいめ・表参道風を中心に"
+        "写真がない場合は、天気・季節トレンドと選択条件から表参道きれいめカジュアルを中心に"
         f"{MAX_RECOMMENDATION_COUNT}案を自動提案します。"
     )
     st.divider()
@@ -240,7 +242,7 @@ else:
 if not candidate_photo_bytes:
     st.info(
         "写真は任意です。写真を追加しなくても、天気・季節トレンド・選択した条件から"
-        f"きれいめを中心に{MAX_RECOMMENDATION_COUNT}案を自動提案します。"
+        f"表参道きれいめカジュアルを中心に{MAX_RECOMMENDATION_COUNT}案を自動提案します。"
         "コーデ提案時はOpenAI APIを使いません。AIイメージは各カードから個別に生成できます。"
     )
 else:
@@ -384,7 +386,7 @@ if not candidate_photo_bytes:
         audience,
         today,
         count=MAX_RECOMMENDATION_COUNT,
-        preferred_style="きれいめ",
+        preferred_style=OMOTESANDO_CLEAN_CASUAL_STYLE,
         preferred_palette=preferred_palette,
     )
 
@@ -413,7 +415,10 @@ if not candidate_photo_bytes:
         f"写真なしの今日のおすすめ{MAX_RECOMMENDATION_COUNT}コーデ",
         icon=":material/auto_awesome:",
     )
-    st.caption("きれいめ・表参道風を中心に、天気・季節トレンド・選択中のカラーから自動提案します。")
+    st.caption(
+        "表参道のきれいめカジュアルを中心に、丈感・レイヤード・素材ミックスは大胆に。"
+        "天気・季節トレンド・選択中のカラーにも合わせて提案します。"
+    )
     st.caption(
         "各案のボタンを押すと、コーデ説明からAIイメージを1枚生成します。"
         "写真は送信されず、生成ごとにAPI利用料が発生する場合があります。"

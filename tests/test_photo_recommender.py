@@ -176,8 +176,9 @@ class PhotoRecommenderTests(unittest.TestCase):
         self.assertEqual(body["model"], "gpt-4.1-mini")
         prompt = body["messages"][0]["content"][0]["text"]
         self.assertIn("8案", prompt)
-        self.assertIn("8案すべてを表参道モードに統一", prompt)
-        self.assertIn("表参道のハイストリート", prompt)
+        self.assertIn("8案すべてを表参道きれいめカジュアルに統一", prompt)
+        self.assertIn("表参道のきれいめカジュアル", prompt)
+        self.assertIn("やりすぎなくらい大胆に遊び", prompt)
         self.assertIn("各案のinner欄", prompt)
         self.assertIn("ブラックスピネルのネックレス", prompt)
         self.assertIn("セイコーの時計", prompt)
@@ -453,7 +454,10 @@ class PhotoRecommenderTests(unittest.TestCase):
         }
         post.return_value = response
 
-        with self.assertRaisesRegex(PhotoAnalysisError, "全案を表参道モード"):
+        with self.assertRaisesRegex(
+            PhotoAnalysisError,
+            f"全案を{RECOMMENDATION_STYLE}",
+        ):
             self.call_recommender()
 
     @patch("photo_recommender.requests.post")

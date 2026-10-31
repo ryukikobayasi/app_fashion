@@ -1,7 +1,11 @@
 import unittest
 from datetime import date
 
-from outfit_engine import recommend_outfits, seasonal_trends
+from outfit_engine import (
+    OMOTESANDO_CLEAN_CASUAL_STYLE,
+    recommend_outfits,
+    seasonal_trends,
+)
 from weather import Weather
 
 
@@ -45,14 +49,13 @@ class OutfitEngineTests(unittest.TestCase):
                     audience,
                     date(2026, 10, 12),
                     count=15,
-                    preferred_style="きれいめ",
+                    preferred_style=OMOTESANDO_CLEAN_CASUAL_STYLE,
                 )
 
                 self.assertEqual(len(outfits), 15)
                 self.assertEqual(len({outfit.title for outfit in outfits}), 15)
-                self.assertGreaterEqual(
-                    sum(outfit.style == "きれいめ" for outfit in outfits),
-                    10,
+                self.assertTrue(
+                    all(outfit.style == OMOTESANDO_CLEAN_CASUAL_STYLE for outfit in outfits)
                 )
 
     def test_unisex_recommendations_mix_both_wardrobes(self):
