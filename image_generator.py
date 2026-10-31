@@ -18,6 +18,11 @@ from photo_recommender import (
 OPENAI_IMAGE_GENERATION_URL = "https://api.openai.com/v1/images/generations"
 OPENAI_IMAGE_EDIT_URL = "https://api.openai.com/v1/images/edits"
 DEFAULT_IMAGE_MODEL = "gpt-image-1"
+IMAGE_EDIT_INPUT_FIDELITY_BY_MODEL = {
+    "gpt-image-1": "high",
+    "gpt-image-1.5": "high",
+    "gpt-image-1-mini": "low",
+}
 MAX_GENERATED_IMAGE_PIXELS = 20_000_000
 
 
@@ -181,15 +186,19 @@ def generate_hairstyle_triptych(
     except PhotoAnalysisError as error:
         raise ImageGenerationError(f"自撮り写真を準備できませんでした: {error}") from error
 
+    model = os.environ.get("OPENAI_IMAGE_MODEL", DEFAULT_IMAGE_MODEL)
     data = {
-        "model": os.environ.get("OPENAI_IMAGE_MODEL", DEFAULT_IMAGE_MODEL),
+        "model": model,
         "prompt": _build_hairstyle_prompt(hairstyle, category),
         "size": "1536x1024",
         "quality": "medium",
         "output_format": "jpeg",
-        "input_fidelity": "high",
         "n": "1",
     }
+    input_fidelity = IMAGE_EDIT_INPUT_FIDELITY_BY_MODEL.get(model)
+    if input_fidelity is not None:
+        data["input_fidelity"] = input_fidelity
+
     files = {"image": ("hairstyle-reference.jpg", normalized_photo, "image/jpeg")}
     try:
         response = requests.post(

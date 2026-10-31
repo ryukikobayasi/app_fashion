@@ -186,6 +186,34 @@ class ImageGeneratorTests(unittest.TestCase):
         self.assertIn("Show the cut described in the salon request", prompt)
         self.assertIn(self.hairstyle.salon_request, prompt)
 
+    @patch("image_generator.requests.post")
+    def test_gpt_image_2_omits_unsupported_input_fidelity(self, post):
+        post.return_value = self.make_success_response()
+
+        with patch.dict(os.environ, {"OPENAI_IMAGE_MODEL": "gpt-image-2"}):
+            generate_hairstyle_triptych(
+                reference_photo=make_jpeg(),
+                hairstyle=self.hairstyle,
+                category="current_hair",
+            )
+
+        payload = post.call_args.kwargs["data"]
+        self.assertEqual(payload["model"], "gpt-image-2")
+        self.assertNotIn("input_fidelity", payload)
+
+    @patch("image_generator.requests.post")
+    def test_gpt_image_1_mini_uses_supported_low_input_fidelity(self, post):
+        post.return_value = self.make_success_response()
+
+        with patch.dict(os.environ, {"OPENAI_IMAGE_MODEL": "gpt-image-1-mini"}):
+            generate_hairstyle_triptych(
+                reference_photo=make_jpeg(),
+                hairstyle=self.hairstyle,
+                category="current_hair",
+            )
+
+        self.assertEqual(post.call_args.kwargs["data"]["input_fidelity"], "low")
+
     def test_hairstyle_generation_requires_a_valid_key_and_photo(self):
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaisesRegex(ImageGenerationError, "OPENAI_API_KEY"):

@@ -35,9 +35,10 @@ _CAMERA_CSS = """
 }
 .camera-frame {
   width: 100%;
-  max-width: 480px;
+  max-width: 640px;
   aspect-ratio: 4 / 3;
   max-height: 45vh;
+  margin-inline: auto;
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -51,6 +52,9 @@ _CAMERA_CSS = """
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+.camera-frame [hidden] {
+  display: none !important;
 }
 .camera-controls {
   display: flex;
@@ -91,6 +95,7 @@ _CAMERA_JS = """
 export default function (component) {
   const { data, parentElement, setTriggerValue } = component
   const video = parentElement.querySelector("#camera-video")
+  const frame = parentElement.querySelector(".camera-frame")
   const snapshot = parentElement.querySelector("#camera-snapshot")
   const canvas = parentElement.querySelector("#camera-canvas")
   const switchButton = parentElement.querySelector("#camera-switch")
@@ -100,7 +105,7 @@ export default function (component) {
   const addButton = parentElement.querySelector("#camera-add")
   const status = parentElement.querySelector("#camera-status")
 
-  if (!video || !snapshot || !canvas || !switchButton || !captureButton ||
+  if (!video || !frame || !snapshot || !canvas || !switchButton || !captureButton ||
       !retryButton || !retakeButton || !addButton || !status) {
     return
   }
@@ -131,6 +136,34 @@ export default function (component) {
         state.stream = null
       }
       video.srcObject = null
+    }
+
+    const updateFrameSize = () => {
+      if (!video.videoWidth || !video.videoHeight) {
+        return
+      }
+
+      const aspectRatio = video.videoWidth / video.videoHeight
+      const frameStyle = window.getComputedStyle(frame)
+      const maxWidth = Number.parseFloat(frameStyle.maxWidth)
+      const maxHeight = Number.parseFloat(frameStyle.maxHeight)
+      const availableWidth = frame.parentElement?.clientWidth || frame.clientWidth
+      const widthLimit = Math.min(
+        availableWidth,
+        Number.isFinite(maxWidth) ? maxWidth : availableWidth,
+      )
+      const heightLimit = Number.isFinite(maxHeight)
+        ? maxHeight
+        : window.innerHeight * 0.45
+      const width = Math.min(widthLimit, heightLimit * aspectRatio)
+
+      if (!Number.isFinite(width) || width <= 0) {
+        return
+      }
+
+      frame.style.width = `${width}px`
+      frame.style.height = `${width / aspectRatio}px`
+      frame.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`
     }
 
     const startCamera = async () => {
@@ -187,6 +220,7 @@ export default function (component) {
         video.srcObject = stream
         video.hidden = false
         await video.play()
+        updateFrameSize()
         state.starting = false
         captureButton.disabled = video.videoWidth === 0
 
@@ -222,11 +256,16 @@ export default function (component) {
 
     state.startCamera = startCamera
     state.stopStream = stopStream
+    window.addEventListener("resize", updateFrameSize, {
+      signal: state.listeners.signal,
+    })
     video.onloadedmetadata = () => {
+      updateFrameSize()
       if (!state.capturedDataUrl) {
         captureButton.disabled = false
       }
     }
+    video.onresize = updateFrameSize
 
     switchButton.addEventListener("click", () => {
       if (state.capturedDataUrl) {
