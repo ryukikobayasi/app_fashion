@@ -25,7 +25,7 @@ class AppNavigationTests(unittest.TestCase):
             ) as camera_capture,
         ):
             app = AppTest.from_file(str(APP_FILE), default_timeout=10).run()
-            app.switch_page(r"app_pages\hairstyles.py").run()
+            app.switch_page(str(Path("app_pages") / "hairstyles.py")).run()
 
         self.assertFalse(app.exception, app.exception)
         self.assertTrue(any("自分に似合う" in title.value for title in app.title))
