@@ -14,6 +14,8 @@ from outfit_engine import TREND_AS_OF, TREND_SOURCES, seasonal_trends
 from image_generator import ImageGenerationError, generate_outfit_image
 from photo_recommender import (
     MAX_IMAGE_BYTES,
+    MAX_PHOTO_COUNT,
+    MAX_TOTAL_IMAGE_BYTES,
     OutfitRecommendation,
     PhotoAnalysis,
     PhotoAnalysisError,
@@ -124,46 +126,105 @@ capture_method = st.radio(
     horizontal=True,
 )
 if capture_method == "カメラで撮影":
-    uploaded_photo = st.camera_input(
-        "カメラを起動してアイテムを撮影",
-        help="ブラウザーからカメラへのアクセスを許可してください。",
-    )
-else:
-    uploaded_photo = st.file_uploader(
-        "使いたい服や小物がわかる写真を選んでください",
-        type=["jpg", "jpeg", "png", "webp"],
-        max_upload_size=30,
-        help="JPEG、PNG、WebP形式、30MB以下。高解像度の写真は自動で縮小します。",
-    )
-st.caption(
-    "ファイル選択または撮影した写真は、提案ボタンを押すと画像解析のためOpenAI APIへ送信されます。"
-    "このアプリは写真を保存しません。"
-)
-
-if uploaded_photo is None:
-    st.info("シャツ、パンツ、靴、バッグなど、コーデに使いたいアイテムの写真を選んでください。")
-    photo_bytes = None
-    photo_digest = ""
-else:
-    if uploaded_photo.size > MAX_IMAGE_BYTES:
-        st.error("写真は30MB以下にしてください。")
-        photo_bytes = None
-        photo_digest = ""
-    else:
-        photo_bytes = uploaded_photo.getvalue()
-        photo_digest = hashlib.sha256(photo_bytes).hexdigest()
-        preview_column, guidance_column = st.columns([1, 2])
-        with preview_column:
+    st.caption("1枚撮るごとに「撮影した写真を追加」を押すと、続けて複数枚を登録できます。")
+    camera_photos = st.session_state.setdefault("camera_photos", [])
+    camera_capture_index = st.session_state.setdefault("camera_capture_index", 0)
+    if len(camera_photos) < MAX_PHOTO_COUNT:
+        captured_photo = st.camera_input(
+            "コーデに使いたいアイテムを撮影",
+            key=f"camera_capture_{camera_capture_index}",
+            help="撮影した写真の「写真を追加」を押すと、次の写真を続けて撮影できます。",
+        )
+        if captured_photo is not None:
+            captured_bytes = captured_photo.getvalue()
             st.image(
-                photo_bytes,
-                caption="アップロードしたアイテム",
-                alt="コーデ提案のために選択した手持ちアイテムの写真",
+                captured_bytes,
+                caption="追加前のプレビュー",
+                alt="撮影して追加する手持ちアイテムの写真",
                 width="stretch",
             )
-        with guidance_column:
-            st.markdown("**写真のポイント**")
-            st.caption("服全体が写っていて、色や形を確認できる明るい写真がおすすめです。")
-            st.caption("複数の服が写っている場合は、組み合わせたいアイテムが分かる写真を選んでください。")
+            if st.button(
+                "撮影した写真を追加",
+                key=f"add_camera_photo_{camera_capture_index}",
+                icon=":material/add_a_photo:",
+            ):
+                total_camera_bytes = sum(len(photo) for photo in camera_photos)
+                if len(captured_bytes) > MAX_IMAGE_BYTES:
+                    st.error("撮影した写真は30MB以下にしてください。")
+                elif len(camera_photos) >= MAX_PHOTO_COUNT:
+                    st.error(f"写真は最大{MAX_PHOTO_COUNT}枚まで追加できます。")
+                elif total_camera_bytes + len(captured_bytes) > MAX_TOTAL_IMAGE_BYTES:
+                    st.error("写真の合計サイズは60MB以下にしてください。")
+                else:
+                    st.session_state["camera_photos"] = [*camera_photos, captured_bytes]
+                    st.session_state["camera_capture_index"] = camera_capture_index + 1
+                    st.rerun()
+    else:
+        st.info(f"最大{MAX_PHOTO_COUNT}枚を追加済みです。別の写真を撮るには、下の写真を削除してください。")
+    candidate_photo_bytes = tuple(camera_photos)
+else:
+    uploaded_photos = st.file_uploader(
+        "使いたい服や小物の写真を選んでください（複数選択可）",
+        type=["jpg", "jpeg", "png", "webp"],
+        accept_multiple_files=True,
+        max_upload_size=30,
+        help="JPEG、PNG、WebP形式。最大8枚、1枚30MB以下、合計60MB以下。高解像度の写真は自動で縮小します。",
+    ) or []
+    candidate_photo_bytes = tuple(photo.getvalue() for photo in uploaded_photos)
+st.caption(
+    "選択した写真はすべて、提案ボタンを押すと画像解析のためOpenAI APIへ送信されます。"
+    "写真はファイルに保存せず、カメラ撮影分はセッション中だけ一時保持します。"
+    "写真が複数枚の場合、API利用料が増えることがあります。"
+)
+
+photo_bytes: tuple[bytes, ...] | None = None
+photo_digest = ""
+if not candidate_photo_bytes:
+    if capture_method == "カメラで撮影":
+        st.info("アイテムを撮影し、「撮影した写真を追加」を押してください。")
+    else:
+        st.info("シャツ、パンツ、靴、バッグなど、コーデに使いたいアイテムの写真を選んでください。")
+elif len(candidate_photo_bytes) > MAX_PHOTO_COUNT:
+    st.error(f"写真は最大{MAX_PHOTO_COUNT}枚まで選択できます。")
+else:
+    oversized_photo = next(
+        (
+            index
+            for index, image in enumerate(candidate_photo_bytes, start=1)
+            if len(image) > MAX_IMAGE_BYTES
+        ),
+        None,
+    )
+    total_size = sum(len(image) for image in candidate_photo_bytes)
+    if oversized_photo is not None:
+        st.error(f"{oversized_photo}枚目の写真は30MB以下にしてください。")
+    elif total_size > MAX_TOTAL_IMAGE_BYTES:
+        st.error("写真の合計サイズは60MB以下にしてください。")
+    else:
+        photo_bytes = candidate_photo_bytes
+        photo_digest = hashlib.sha256(
+            "\0".join(hashlib.sha256(image).hexdigest() for image in photo_bytes).encode("ascii")
+        ).hexdigest()
+        st.caption(f"{len(photo_bytes)}枚の写真をまとめてコーデ提案に使用します。")
+        preview_columns = st.columns(3)
+        for index, image in enumerate(photo_bytes):
+            with preview_columns[index % len(preview_columns)]:
+                st.image(
+                    image,
+                    caption=f"アイテム写真 {index + 1}",
+                    alt=f"コーデ提案のために選択した手持ちアイテムの写真 {index + 1}",
+                    width="stretch",
+                )
+                if capture_method == "カメラで撮影" and st.button(
+                    "撮影写真を削除",
+                    key=f"remove_camera_photo_{index}",
+                    icon=":material/delete:",
+                ):
+                    updated_camera_photos = list(st.session_state["camera_photos"])
+                    updated_camera_photos.pop(index)
+                    st.session_state["camera_photos"] = updated_camera_photos
+                    st.rerun()
+        st.caption("服全体が写っていて、色や形を確認できる明るい写真がおすすめです。")
 
 weather: Weather | None = None
 weather_error = None
@@ -273,7 +334,7 @@ if st.button(
         )
     else:
         try:
-            with st.spinner("写真のアイテムを読み取り、8つの着こなしを考えています..."):
+            with st.spinner("すべての写真を読み取り、8つの着こなしを考えています..."):
                 analysis = recommend_from_photo(
                     image_bytes=photo_bytes,
                     audience=audience,

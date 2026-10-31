@@ -2,6 +2,7 @@ import base64
 import json
 import os
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from io import BytesIO
@@ -13,6 +14,8 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions"
 DEFAULT_MODEL = "gpt-4.1-mini"
 MAX_IMAGE_BYTES = 30 * 1024 * 1024
+MAX_PHOTO_COUNT = 8
+MAX_TOTAL_IMAGE_BYTES = 60 * 1024 * 1024
 MAX_IMAGE_PIXELS = 250_000_000
 MAX_IMAGE_PIXELS_WITHOUT_JPEG_DOWNSAMPLING = 80_000_000
 MAX_IMAGE_SIDE = 1280
@@ -146,6 +149,32 @@ def _prepare_photo(image_bytes: bytes) -> str:
     return f"data:image/jpeg;base64,{encoded}"
 
 
+def _prepare_photos(image_bytes: bytes | Sequence[bytes]) -> tuple[str, ...]:
+    if isinstance(image_bytes, bytes):
+        photos = (image_bytes,)
+    elif isinstance(image_bytes, Sequence) and not isinstance(image_bytes, (str, bytearray)):
+        photos = tuple(image_bytes)
+    else:
+        raise PhotoAnalysisError("写真を選択してください。")
+
+    if not photos:
+        raise PhotoAnalysisError("写真を1枚以上選択してください。")
+    if len(photos) > MAX_PHOTO_COUNT:
+        raise PhotoAnalysisError(f"写真は最大{MAX_PHOTO_COUNT}枚まで選択できます。")
+    if not all(isinstance(photo, bytes) for photo in photos):
+        raise PhotoAnalysisError("写真データを読み取れませんでした。選び直してください。")
+    if sum(len(photo) for photo in photos) > MAX_TOTAL_IMAGE_BYTES:
+        raise PhotoAnalysisError("写真の合計サイズは60MB以下にしてください。")
+
+    data_urls = []
+    for index, photo in enumerate(photos, start=1):
+        try:
+            data_urls.append(_prepare_photo(photo))
+        except PhotoAnalysisError as error:
+            raise PhotoAnalysisError(f"{index}枚目の写真を処理できませんでした。{error}") from error
+    return tuple(data_urls)
+
+
 def _prompt(
     audience: str,
     preferred_style: str,
@@ -161,12 +190,15 @@ def _prompt(
 
     return (
         "あなたは若者向けの日本語ファッションスタイリストです。"
-        "添付写真に実際に写っている手持ち衣類・服飾アイテムを主役として読み取り、"
-        "そのアイテムを必ず使う、現実的でおしゃれなコーディネートを提案してください。"
+        "添付されたすべての写真をまとめて読み取り、写真ごとに写っている衣類・服飾アイテムを"
+        "一つの手持ちワードローブとして整理してください。"
+        "同じアイテムが複数の写真に写っている場合は重複して数えないでください。"
+        "写真から確認できるアイテムを組み合わせ、各コーデに少なくとも1点使ってください。"
+        "8案全体を通じて写真の手持ちアイテムを幅広く活用した、現実的でおしゃれな提案にしてください。"
         "写真に人物が写っていても体型・年齢・性別を推測せず、服とアイテムだけを見てください。"
         "見えないブランド、素材、色、ロゴを断定しないでください。"
-        "衣類が判別できない写真では garment_found=false、outfits=[] としてください。"
-        "判別できる場合は、主役アイテムを使った異なる着こなしを必ず8案作ってください。"
+        "どの写真にも衣類や服飾アイテムが判別できない場合は garment_found=false、outfits=[] としてください。"
+        "判別できる場合は、写真に写ったアイテムを使った異なる着こなしを必ず8案作ってください。"
         "8案すべてをきれいめカジュアルに統一し、各style欄は正確に「きれいめカジュアル」としてください。"
         "色、シルエット、トップス・ボトムス・羽織りの組み合わせを変えて、各案に違いを出してください。"
         "全案のaccessory欄に「ブラックスピネルのネックレス」を含めてください。"
@@ -176,7 +208,7 @@ def _prompt(
         "天気欄が前年同月の平均気温なら、今日の実況・予報ではない季節参考値として扱ってください。"
         "前年同月の平均気温を参考に、気温に合う素材や羽織りで季節感を整えてください。"
         "降水・風・湿度が不明な場合、それらを推測して服装に反映しないでください。"
-        "写真のアイテムを別の商品に置き換えないでください。"
+        "写真に写ったアイテムを別の商品に置き換えないでください。"
         "性別・着こなし区分: "
         f"{audience}。好きなテイスト: {preferred_style}。配色方針: {palette}"
         f" 今日の日付: {today.isoformat()}。天気: {weather}。"
@@ -277,7 +309,7 @@ def _parse_analysis(content: str) -> PhotoAnalysis:
 
 
 def recommend_from_photo(
-    image_bytes: bytes,
+    image_bytes: bytes | Sequence[bytes],
     audience: str,
     preferred_style: str,
     preferred_palette: str,
@@ -292,7 +324,7 @@ def recommend_from_photo(
             "OPENAI_API_KEYが設定されていません。環境変数にAPIキーを設定してください。"
         )
 
-    image_url = _prepare_photo(image_bytes)
+    image_urls = _prepare_photos(image_bytes)
     model = os.environ.get("OPENAI_VISION_MODEL", DEFAULT_MODEL)
     payload = {
         "model": model,
@@ -310,8 +342,11 @@ def recommend_from_photo(
                             weather_context,
                             seasonal_context,
                         ),
-                    },
-                    {"type": "image_url", "image_url": {"url": image_url, "detail": "high"}},
+                    }
+                ]
+                + [
+                    {"type": "image_url", "image_url": {"url": image_url, "detail": "high"}}
+                    for image_url in image_urls
                 ],
             }
         ],

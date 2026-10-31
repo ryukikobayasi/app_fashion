@@ -11,6 +11,7 @@ from PIL import Image
 from photo_recommender import (
     MAX_IMAGE_BYTES,
     MAX_IMAGE_PIXELS,
+    MAX_PHOTO_COUNT,
     PhotoAnalysisError,
     _prepare_photo,
     recommend_from_photo,
@@ -86,9 +87,9 @@ class PhotoRecommenderTests(unittest.TestCase):
         self.addCleanup(self.api_key.stop)
         self.image_bytes = make_png()
 
-    def call_recommender(self, weather_context="東京、体感18°C"):
+    def call_recommender(self, weather_context="東京、体感18°C", image_bytes=None):
         return recommend_from_photo(
-            image_bytes=self.image_bytes,
+            image_bytes=self.image_bytes if image_bytes is None else image_bytes,
             audience="ユニセックス",
             preferred_style="きれいめカジュアル",
             preferred_palette="おまかせ",
@@ -151,6 +152,36 @@ class PhotoRecommenderTests(unittest.TestCase):
         schema = body["response_format"]["json_schema"]["schema"]
         self.assertNotIn("maxItems", json.dumps(schema))
         self.assertNotIn("minItems", json.dumps(schema))
+
+    @patch("photo_recommender.requests.post")
+    def test_sends_all_uploaded_photos_in_one_request(self, post):
+        response = Mock()
+        response.ok = True
+        response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(make_response_payload(), ensure_ascii=False)
+                    }
+                }
+            ]
+        }
+        post.return_value = response
+
+        result = self.call_recommender(image_bytes=(self.image_bytes, make_png(80, 60)))
+
+        self.assertEqual(len(result.outfits), 8)
+        content = post.call_args.kwargs["json"]["messages"][0]["content"]
+        self.assertIn("添付されたすべての写真", content[0]["text"])
+        self.assertEqual(len(content), 3)
+        self.assertTrue(all(block["type"] == "image_url" for block in content[1:]))
+        self.assertTrue(
+            all(
+                block["image_url"]["url"].startswith("data:image/jpeg;base64,")
+                for block in content[1:]
+            )
+        )
+        post.assert_called_once()
 
     @patch("photo_recommender.requests.post")
     def test_historical_temperature_is_passed_as_a_reference_not_a_forecast(self, post):
@@ -261,6 +292,23 @@ class PhotoRecommenderTests(unittest.TestCase):
                 self.image_bytes = image_bytes
                 with self.assertRaises(PhotoAnalysisError):
                     self.call_recommender()
+        post.assert_not_called()
+
+    @patch("photo_recommender.requests.post")
+    def test_photo_count_and_total_size_limits_are_enforced(self, post):
+        with self.assertRaisesRegex(PhotoAnalysisError, "最大8枚"):
+            self.call_recommender(image_bytes=(self.image_bytes,) * (MAX_PHOTO_COUNT + 1))
+
+        with patch("photo_recommender.MAX_TOTAL_IMAGE_BYTES", 10):
+            with self.assertRaisesRegex(PhotoAnalysisError, "合計サイズ"):
+                self.call_recommender(image_bytes=(b"x" * 6, b"x" * 5))
+
+        post.assert_not_called()
+
+    @patch("photo_recommender.requests.post")
+    def test_invalid_photo_reports_its_position(self, post):
+        with self.assertRaisesRegex(PhotoAnalysisError, "2枚目"):
+            self.call_recommender(image_bytes=(self.image_bytes, b"not an image"))
         post.assert_not_called()
 
     def test_decodable_image_formats_are_normalized_to_jpeg(self):
