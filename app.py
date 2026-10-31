@@ -26,6 +26,11 @@ page = st.navigation(
             title="メンズ髪型診断",
             icon=":material/face:",
         ),
+        st.Page(
+            APP_DIRECTORY / "app_pages" / "bookmarks.py",
+            title="お気に入り",
+            icon=":material/bookmark:",
+        ),
     ],
     position="top",
 )
