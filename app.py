@@ -20,6 +20,7 @@ from photo_recommender import (
     OutfitRecommendation,
     PhotoAnalysis,
     PhotoAnalysisError,
+    RECOMMENDATION_STYLE,
     recommend_from_photo,
 )
 from weather import (
@@ -67,6 +68,7 @@ def render_outfit(outfit: OutfitRecommendation, number: int) -> None:
             f"{swatches}</div>"
         )
         for label, value in (
+            ("インナー", outfit.inner),
             ("トップス", outfit.top),
             ("ボトムス", outfit.bottom),
             ("羽織り", outfit.outerwear),
@@ -86,7 +88,7 @@ with st.sidebar:
         options=["ユニセックス", "レディース", "メンズ"],
         index=2,
     )
-    preferred_style = "きれいめカジュアル"
+    preferred_style = RECOMMENDATION_STYLE
     preferred_palette = st.selectbox(
         "好きなカラーコーデ",
         options=["おまかせ", "赤×ブルー", "モノトーン", "アースカラー", "ニュートラル"],
@@ -95,7 +97,8 @@ with st.sidebar:
     include_weather = st.checkbox("今日の天気も考慮する", value=True)
     city_name = st.selectbox("エリア", options=list(CITIES), index=0, disabled=not include_weather)
     st.caption(
-        "写真のアイテムを使った8案を、すべてきれいめカジュアルで提案します。"
+        "写真のアイテムを主役に、表参道のハイストリートをイメージした8案を大胆に提案します。"
+        "各案にインナーの重ね方と写真外のプラスワン候補を含めます。"
         "ブラックスピネルのネックレス、時計、黒の厚底靴を合わせます。"
     )
     st.divider()

@@ -26,15 +26,17 @@ def _build_prompt(
 ) -> str:
     colors = "、".join(f"{name} ({hex_code})" for name, hex_code in outfit.colors)
     return (
-        "Create one polished, photorealistic Japanese fashion editorial image. "
+        "Create one bold, photorealistic Japanese fashion editorial image inspired by Omotesando high-street style. "
         "Show one adult model in a full-body view, wearing the complete outfit below. "
         "Keep the clothing clearly visible, with a natural pose and a clean, understated background. "
-        "Use realistic garment proportions and layering. Do not add text, labels, logos, watermarks, "
+        "Use fashion-forward layering and realistic garment proportions. Do not add text, labels, logos, watermarks, "
         "collages, or extra people. "
         f"Styling audience: {audience}. Outfit title: {outfit.title}. Style: {outfit.style}. "
         f"Styling pattern: {outfit.pattern}. "
         f"Key item from the user's wardrobe photo: {item_type}, {item_summary}. "
-        f"Top: {outfit.top}. Bottom: {outfit.bottom}. Outerwear: {outfit.outerwear}. "
+        f"Inner layer: {outfit.inner}. Top: {outfit.top}. "
+        f"Show the inner layer at the neckline, cuffs, or hem as described. "
+        f"Bottom: {outfit.bottom}. Outerwear: {outfit.outerwear}. "
         f"Shoes: {outfit.shoes}. Accessories: {outfit.accessory}. "
         f"Optional add-on item: {outfit.extra_item}. Reason to add it: {outfit.extra_item_reason}. "
         f"Color palette: {colors}. "

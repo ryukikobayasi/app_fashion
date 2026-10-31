@@ -12,7 +12,7 @@ from image_generator import (
     ImageGenerationError,
     generate_outfit_image,
 )
-from photo_recommender import OutfitRecommendation
+from photo_recommender import OutfitRecommendation, RECOMMENDATION_STYLE
 
 
 def make_jpeg():
@@ -30,13 +30,14 @@ class ImageGeneratorTests(unittest.TestCase):
         self.generated_jpeg = make_jpeg()
         self.outfit = OutfitRecommendation(
             title="シティ・レイヤード",
-            pattern="Iライン×ロングレイヤード",
-            style="きれいめストリート",
+            pattern="シアーインナー×レイヤード",
+            style=RECOMMENDATION_STYLE,
             colors=(
                 ("ネイビー", "#243956"),
                 ("アイボリー", "#F1EBDD"),
                 ("レッド", "#B52D45"),
             ),
+            inner="薄手の黒ハイネックを襟元と袖口から見せる",
             top="写真のブルーシャツ",
             bottom="ワイドスラックス",
             outerwear="ショートコート",
@@ -84,8 +85,9 @@ class ImageGeneratorTests(unittest.TestCase):
         self.assertEqual(payload["output_format"], "jpeg")
         self.assertEqual(payload["n"], 1)
         self.assertIn("青系の長袖シャツ", payload["prompt"])
+        self.assertIn("薄手の黒ハイネック", payload["prompt"])
         self.assertIn("ワイドスラックス", payload["prompt"])
-        self.assertIn("Iライン×ロングレイヤード", payload["prompt"])
+        self.assertIn("シアーインナー×レイヤード", payload["prompt"])
         self.assertIn("シルバーの細チェーン", payload["prompt"])
         with Image.open(BytesIO(result)) as image:
             self.assertEqual(image.format, "JPEG")

@@ -13,6 +13,7 @@ from photo_recommender import (
     MAX_IMAGE_PIXELS,
     MAX_PHOTO_COUNT,
     PhotoAnalysisError,
+    RECOMMENDATION_STYLE,
     _prepare_photo,
     recommend_from_photo,
 )
@@ -59,16 +60,27 @@ def make_response_payload(outfit_count=8):
         "細フレームサングラス",
         "レザーグローブ",
     )
+    inners = (
+        "写真外の追加候補: 黒のシアータートルを襟元から見せる",
+        "写真外の追加候補: 白のロングシャツを袖口と裾から見せる",
+        "写真外の追加候補: グレーのリブタンクを重ねる",
+        "写真外の追加候補: シルバーグレーの薄手タートルを首元から見せる",
+        "写真外の追加候補: ストライプシャツを襟元から見せる",
+        "写真外の追加候補: 黒のメッシュトップスを袖口から見せる",
+        "写真外の追加候補: アイボリーのタンクトップを裾から見せる",
+        "写真外の追加候補: 白のシアー長袖をインナーにする",
+    )
     for index in range(outfit_count):
         outfits.append(
             {
                 "title": f"スタイル {index + 1}",
-                "style": "きれいめカジュアル",
+                "style": RECOMMENDATION_STYLE,
                 "colors": {
                     "base": {"name": "ネイビー", "hex": "#243956"},
                     "secondary": {"name": "アイボリー", "hex": "#F1EBDD"},
                     "accent": {"name": "レッド", "hex": "#B52D45"},
                 },
+                "inner": inners[index],
                 "top": "アップロードしたシャツ",
                 "bottom": "ワイドパンツ",
                 "outerwear": "ジャケット",
@@ -103,7 +115,7 @@ class PhotoRecommenderTests(unittest.TestCase):
         return recommend_from_photo(
             image_bytes=self.image_bytes if image_bytes is None else image_bytes,
             audience="ユニセックス",
-            preferred_style="きれいめカジュアル",
+            preferred_style=RECOMMENDATION_STYLE,
             preferred_palette="おまかせ",
             today=date(2026, 10, 12),
             weather_context=weather_context,
@@ -145,7 +157,9 @@ class PhotoRecommenderTests(unittest.TestCase):
                 "レザーグローブ",
             },
         )
-        self.assertTrue(all(outfit.style == "きれいめカジュアル" for outfit in result.outfits))
+        self.assertTrue(all(outfit.style == RECOMMENDATION_STYLE for outfit in result.outfits))
+        self.assertTrue(all(outfit.inner.strip() for outfit in result.outfits))
+        self.assertEqual(len({outfit.inner for outfit in result.outfits}), 8)
         self.assertTrue(all("ブラックスピネル" in outfit.accessory for outfit in result.outfits))
         self.assertTrue(all("黒" in outfit.shoes and "厚底" in outfit.shoes for outfit in result.outfits))
         self.assertTrue(any("セイコー" in outfit.accessory for outfit in result.outfits))
@@ -162,7 +176,9 @@ class PhotoRecommenderTests(unittest.TestCase):
         self.assertEqual(body["model"], "gpt-4.1-mini")
         prompt = body["messages"][0]["content"][0]["text"]
         self.assertIn("8案", prompt)
-        self.assertIn("8案すべてをきれいめカジュアルに統一", prompt)
+        self.assertIn("8案すべてを表参道モードに統一", prompt)
+        self.assertIn("表参道のハイストリート", prompt)
+        self.assertIn("各案のinner欄", prompt)
         self.assertIn("ブラックスピネルのネックレス", prompt)
         self.assertIn("セイコーの時計", prompt)
         self.assertIn("ロンジンの自動巻き時計", prompt)
@@ -182,6 +198,7 @@ class PhotoRecommenderTests(unittest.TestCase):
         self.assertNotIn("minItems", json.dumps(schema))
         color_schema = schema["properties"]["outfits"]["items"]["properties"]["colors"]
         self.assertEqual(color_schema["required"], ["base", "secondary", "accent"])
+        self.assertIn("inner", schema["properties"]["outfits"]["items"]["required"])
 
     @patch("photo_recommender.requests.post")
     def test_sends_all_uploaded_photos_in_one_request(self, post):
@@ -301,7 +318,7 @@ class PhotoRecommenderTests(unittest.TestCase):
             result = recommend_from_photo(
                 image_bytes=self.image_bytes,
                 audience="ユニセックス",
-                preferred_style="きれいめカジュアル",
+                preferred_style=RECOMMENDATION_STYLE,
                 preferred_palette="おまかせ",
                 today=date(2026, 10, 12),
                 weather_context=None,
@@ -424,7 +441,7 @@ class PhotoRecommenderTests(unittest.TestCase):
             self.call_recommender()
 
     @patch("photo_recommender.requests.post")
-    def test_response_must_use_smart_casual_style_for_all_outfits(self, post):
+    def test_response_must_use_requested_style_for_all_outfits(self, post):
         payload = make_response_payload()
         payload["outfits"][0]["style"] = "ストリート"
         response = Mock()
@@ -436,7 +453,7 @@ class PhotoRecommenderTests(unittest.TestCase):
         }
         post.return_value = response
 
-        with self.assertRaisesRegex(PhotoAnalysisError, "全案をきれいめカジュアル"):
+        with self.assertRaisesRegex(PhotoAnalysisError, "全案を表参道モード"):
             self.call_recommender()
 
     @patch("photo_recommender.requests.post")
@@ -493,6 +510,46 @@ class PhotoRecommenderTests(unittest.TestCase):
         post.return_value = response
 
         with self.assertRaisesRegex(PhotoAnalysisError, "説明が不完全"):
+            self.call_recommender()
+
+    @patch("photo_recommender.requests.post")
+    def test_missing_inner_layer_is_rejected(self, post):
+        payload = make_response_payload()
+        del payload["outfits"][0]["inner"]
+        response = Mock()
+        response.ok = True
+        response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(payload, ensure_ascii=False)
+                    }
+                }
+            ]
+        }
+        post.return_value = response
+
+        with self.assertRaisesRegex(PhotoAnalysisError, "説明が不完全"):
+            self.call_recommender()
+
+    @patch("photo_recommender.requests.post")
+    def test_blank_inner_layer_is_rejected(self, post):
+        payload = make_response_payload()
+        payload["outfits"][0]["inner"] = "  "
+        response = Mock()
+        response.ok = True
+        response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(payload, ensure_ascii=False)
+                    }
+                }
+            ]
+        }
+        post.return_value = response
+
+        with self.assertRaisesRegex(PhotoAnalysisError, "インナーが不完全"):
             self.call_recommender()
 
     @patch("photo_recommender.requests.post")

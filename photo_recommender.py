@@ -13,6 +13,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions"
 DEFAULT_MODEL = "gpt-4.1-mini"
+RECOMMENDATION_STYLE = "表参道モード"
 MAX_IMAGE_BYTES = 30 * 1024 * 1024
 MAX_PHOTO_COUNT = 8
 MAX_TOTAL_IMAGE_BYTES = 60 * 1024 * 1024
@@ -32,6 +33,7 @@ class OutfitRecommendation:
     pattern: str
     style: str
     colors: tuple[tuple[str, str], ...]
+    inner: str
     top: str
     bottom: str
     outerwear: str
@@ -52,14 +54,14 @@ class PhotoAnalysis:
 
 
 _LOOK_PATTERNS = (
-    "ショート丈×ワイド",
-    "Iライン×ロングレイヤード",
-    "タックイン×ウエストマーク",
+    "オーバーサイズ×Iライン",
+    "シアーインナー×レイヤード",
+    "ショート丈×ロング丈",
     "ワントーン×異素材",
-    "トラッドMIX",
-    "スポーツMIX",
-    "リラックスシルエット",
-    "小物で旬を足す",
+    "トラッド×エッジィ",
+    "テック×モード",
+    "テーラード崩し",
+    "小物主役の大胆バランス",
 )
 _COLOR_ROLES = ("base", "secondary", "accent")
 _COLOR_ENTRY_SCHEMA = {
@@ -95,6 +97,7 @@ _OUTFIT_SCHEMA = {
                         "required": list(_COLOR_ROLES),
                         "additionalProperties": False,
                     },
+                    "inner": {"type": "string"},
                     "top": {"type": "string"},
                     "bottom": {"type": "string"},
                     "outerwear": {"type": "string"},
@@ -108,6 +111,7 @@ _OUTFIT_SCHEMA = {
                     "title",
                     "style",
                     "colors",
+                    "inner",
                     "top",
                     "bottom",
                     "outerwear",
@@ -220,16 +224,23 @@ def _prompt(
         "一つの手持ちワードローブとして整理してください。"
         "同じアイテムが複数の写真に写っている場合は重複して数えないでください。"
         "写真から確認できるアイテムを組み合わせ、各コーデに少なくとも1点使ってください。"
-        "8案全体を通じて写真の手持ちアイテムを幅広く活用した、現実的でおしゃれな提案にしてください。"
+        "8案全体を通じて写真の手持ちアイテムを幅広く活用し、表参道のハイストリートを歩く人のような"
+        "都会的でモードなファッションスナップにしてください。"
+        "無難な組み合わせに逃げず、ファッション誌の特集のようにシルエット・素材・レイヤードを大胆に。"
+        "ただし実際に着られる服として成立させてください。"
         "写真に人物が写っていても体型・年齢・性別を推測せず、服とアイテムだけを見てください。"
         "見えないブランド、素材、色、ロゴを断定しないでください。"
         "どの写真にも衣類や服飾アイテムが判別できない場合は garment_found=false、outfits=[] としてください。"
         "判別できる場合は、写真に写ったアイテムを使った異なる着こなしを必ず8案作ってください。"
-        "8案すべてをきれいめカジュアルに統一し、各style欄は正確に「きれいめカジュアル」としてください。"
+        f"8案すべてを{preferred_style}に統一し、各style欄は正確に「{preferred_style}」としてください。"
         "色、シルエット、トップス・ボトムス・羽織りの組み合わせを変えて、各案に違いを出してください。"
         f"8案は次の着こなしパターンを番号順に1案ずつ提案してください: {pattern_guidance}。"
         "各案で主役にする写真アイテムをできるだけ入れ替え、同じトップス・ボトムス・羽織りの組み合わせを繰り返さないでください。"
         "丈感、シルエット、レイヤード、タックイン、素材感を変えて、8案の見た目がはっきり異なるようにしてください。"
+        "各案のinner欄には、肌着ではなく見せるためのファッションインナーを具体的に1点必ず入れてください。"
+        "薄手タートル、シアートップス、タンクトップ、シャツなどを使い、トップスとの重ね方と"
+        "首元・袖口・裾のどこから見せるかをinner欄に記述してください。"
+        "インナーが写真にない場合は写真外の追加候補だと明記し、手持ちにあると決めつけないでください。"
         "全案のaccessory欄に「ブラックスピネルのネックレス」を含めてください。"
         "時計は各案で「セイコーの時計」か「ロンジンの自動巻き時計」のどちらか一つを選び、両方を同時につけないでください。"
         "8案全体でセイコーとロンジンの時計を使い分けてください。"
@@ -238,7 +249,8 @@ def _prompt(
         "前年同月の平均気温を参考に、気温に合う素材や羽織りで季節感を整えてください。"
         "降水・風・湿度が不明な場合、それらを推測して服装に反映しないでください。"
         "写真に写ったアイテムを別の商品に置き換えないでください。"
-        "extra_itemには写真に写っていないファッションアイテムを各案1点だけプラスワン候補として提案してください。"
+        "extra_itemにはinnerと重複しない、写真に写っていないファッションアイテムを各案1点だけ"
+        "プラスワン候補として提案してください。"
         "8案で同じ追加アイテムを繰り返さず、ベルト、バッグ、帽子、スカーフ、ソックスなどからコーデに合う種類を選んでください。"
         "extra_item_reasonには、そのアイテムを加えるとコーデがどうおしゃれになるかを簡潔に説明し、手持ちにあると決めつけないでください。"
         "性別・着こなし区分: "
@@ -252,7 +264,10 @@ def _prompt(
     )
 
 
-def _parse_analysis(content: str) -> PhotoAnalysis:
+def _parse_analysis(
+    content: str,
+    preferred_style: str = RECOMMENDATION_STYLE,
+) -> PhotoAnalysis:
     try:
         payload = json.loads(content)
     except json.JSONDecodeError as error:
@@ -303,6 +318,7 @@ def _parse_analysis(content: str) -> PhotoAnalysis:
         text_fields = (
             "title",
             "style",
+            "inner",
             "top",
             "bottom",
             "outerwear",
@@ -314,6 +330,8 @@ def _parse_analysis(content: str) -> PhotoAnalysis:
         )
         if not all(isinstance(outfit.get(field), str) for field in text_fields):
             raise PhotoAnalysisError("コーディネートの説明が不完全です。再度お試しください。")
+        if not outfit["inner"].strip():
+            raise PhotoAnalysisError("コーディネートのインナーが不完全です。再度お試しください。")
         if not outfit["extra_item"].strip() or not outfit["extra_item_reason"].strip():
             raise PhotoAnalysisError("プラスワンアイテムの説明が不完全です。再度お試しください。")
         outfits.append(
@@ -322,6 +340,7 @@ def _parse_analysis(content: str) -> PhotoAnalysis:
                 pattern=_LOOK_PATTERNS[index],
                 style=outfit["style"],
                 colors=tuple(parsed_colors),
+                inner=outfit["inner"],
                 top=outfit["top"],
                 bottom=outfit["bottom"],
                 outerwear=outfit["outerwear"],
@@ -332,8 +351,10 @@ def _parse_analysis(content: str) -> PhotoAnalysis:
                 reason=outfit["reason"],
             )
         )
-    if any(outfit.style != "きれいめカジュアル" for outfit in outfits):
-        raise PhotoAnalysisError("全案をきれいめカジュアルに統一できませんでした。再度お試しください。")
+    if any(outfit.style != preferred_style for outfit in outfits):
+        raise PhotoAnalysisError(
+            f"全案を{preferred_style}に統一できませんでした。再度お試しください。"
+        )
     if any("ブラックスピネル" not in outfit.accessory for outfit in outfits):
         raise PhotoAnalysisError("全案にブラックスピネルのネックレスを含められませんでした。再度お試しください。")
     if any(
@@ -448,4 +469,4 @@ def recommend_from_photo(
 
     if not isinstance(content, str):
         raise PhotoAnalysisError("OpenAIからテキスト形式の解析結果が返されませんでした。")
-    return _parse_analysis(content)
+    return _parse_analysis(content, preferred_style)
