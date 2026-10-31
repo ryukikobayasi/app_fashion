@@ -29,6 +29,7 @@ class PhotoAnalysisError(Exception):
 @dataclass(frozen=True)
 class OutfitRecommendation:
     title: str
+    pattern: str
     style: str
     colors: tuple[tuple[str, str], ...]
     top: str
@@ -36,6 +37,8 @@ class OutfitRecommendation:
     outerwear: str
     shoes: str
     accessory: str
+    extra_item: str
+    extra_item_reason: str
     reason: str
 
 
@@ -48,6 +51,16 @@ class PhotoAnalysis:
     outfits: tuple[OutfitRecommendation, ...]
 
 
+_LOOK_PATTERNS = (
+    "ショート丈×ワイド",
+    "Iライン×ロングレイヤード",
+    "タックイン×ウエストマーク",
+    "ワントーン×異素材",
+    "トラッドMIX",
+    "スポーツMIX",
+    "リラックスシルエット",
+    "小物で旬を足す",
+)
 _COLOR_ROLES = ("base", "secondary", "accent")
 _COLOR_ENTRY_SCHEMA = {
     "type": "object",
@@ -87,6 +100,8 @@ _OUTFIT_SCHEMA = {
                     "outerwear": {"type": "string"},
                     "shoes": {"type": "string"},
                     "accessory": {"type": "string"},
+                    "extra_item": {"type": "string"},
+                    "extra_item_reason": {"type": "string"},
                     "reason": {"type": "string"},
                 },
                 "required": [
@@ -98,6 +113,8 @@ _OUTFIT_SCHEMA = {
                     "outerwear",
                     "shoes",
                     "accessory",
+                    "extra_item",
+                    "extra_item_reason",
                     "reason",
                 ],
                 "additionalProperties": False,
@@ -192,6 +209,10 @@ def _prompt(
     palette = _PALETTE_GUIDANCE.get(preferred_palette)
     if palette is None:
         raise ValueError(f"対応していない配色です: {preferred_palette}")
+    pattern_guidance = "、".join(
+        f"{index + 1}案目「{pattern}」"
+        for index, pattern in enumerate(_LOOK_PATTERNS)
+    )
 
     return (
         "あなたは若者向けの日本語ファッションスタイリストです。"
@@ -206,6 +227,9 @@ def _prompt(
         "判別できる場合は、写真に写ったアイテムを使った異なる着こなしを必ず8案作ってください。"
         "8案すべてをきれいめカジュアルに統一し、各style欄は正確に「きれいめカジュアル」としてください。"
         "色、シルエット、トップス・ボトムス・羽織りの組み合わせを変えて、各案に違いを出してください。"
+        f"8案は次の着こなしパターンを番号順に1案ずつ提案してください: {pattern_guidance}。"
+        "各案で主役にする写真アイテムをできるだけ入れ替え、同じトップス・ボトムス・羽織りの組み合わせを繰り返さないでください。"
+        "丈感、シルエット、レイヤード、タックイン、素材感を変えて、8案の見た目がはっきり異なるようにしてください。"
         "全案のaccessory欄に「ブラックスピネルのネックレス」を含めてください。"
         "時計は各案で「セイコーの時計」か「ロンジンの自動巻き時計」のどちらか一つを選び、両方を同時につけないでください。"
         "8案全体でセイコーとロンジンの時計を使い分けてください。"
@@ -214,6 +238,9 @@ def _prompt(
         "前年同月の平均気温を参考に、気温に合う素材や羽織りで季節感を整えてください。"
         "降水・風・湿度が不明な場合、それらを推測して服装に反映しないでください。"
         "写真に写ったアイテムを別の商品に置き換えないでください。"
+        "extra_itemには写真に写っていないファッションアイテムを各案1点だけプラスワン候補として提案してください。"
+        "8案で同じ追加アイテムを繰り返さず、ベルト、バッグ、帽子、スカーフ、ソックスなどからコーデに合う種類を選んでください。"
+        "extra_item_reasonには、そのアイテムを加えるとコーデがどうおしゃれになるかを簡潔に説明し、手持ちにあると決めつけないでください。"
         "性別・着こなし区分: "
         f"{audience}。好きなテイスト: {preferred_style}。配色方針: {palette}"
         f" 今日の日付: {today.isoformat()}。天気: {weather}。"
@@ -254,7 +281,7 @@ def _parse_analysis(content: str) -> PhotoAnalysis:
         raise PhotoAnalysisError("8案のコーディネートを生成できませんでした。再度お試しください。")
 
     outfits = []
-    for outfit in outfits_data:
+    for index, outfit in enumerate(outfits_data):
         if not isinstance(outfit, dict):
             raise PhotoAnalysisError("画像解析サービスから不正なコーディネートが返されました。")
         colors = outfit.get("colors")
@@ -273,12 +300,26 @@ def _parse_analysis(content: str) -> PhotoAnalysis:
                 raise PhotoAnalysisError("コーディネートの色データが不正です。")
             parsed_colors.append((color["name"], color["hex"]))
 
-        text_fields = ("title", "style", "top", "bottom", "outerwear", "shoes", "accessory", "reason")
+        text_fields = (
+            "title",
+            "style",
+            "top",
+            "bottom",
+            "outerwear",
+            "shoes",
+            "accessory",
+            "extra_item",
+            "extra_item_reason",
+            "reason",
+        )
         if not all(isinstance(outfit.get(field), str) for field in text_fields):
             raise PhotoAnalysisError("コーディネートの説明が不完全です。再度お試しください。")
+        if not outfit["extra_item"].strip() or not outfit["extra_item_reason"].strip():
+            raise PhotoAnalysisError("プラスワンアイテムの説明が不完全です。再度お試しください。")
         outfits.append(
             OutfitRecommendation(
                 title=outfit["title"],
+                pattern=_LOOK_PATTERNS[index],
                 style=outfit["style"],
                 colors=tuple(parsed_colors),
                 top=outfit["top"],
@@ -286,6 +327,8 @@ def _parse_analysis(content: str) -> PhotoAnalysis:
                 outerwear=outfit["outerwear"],
                 shoes=outfit["shoes"],
                 accessory=outfit["accessory"],
+                extra_item=outfit["extra_item"],
+                extra_item_reason=outfit["extra_item_reason"],
                 reason=outfit["reason"],
             )
         )

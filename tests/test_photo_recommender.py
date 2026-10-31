@@ -49,6 +49,16 @@ def make_large_image(format_name, width=6000, height=4000):
 
 def make_response_payload(outfit_count=8):
     outfits = []
+    extra_items = (
+        "細ベルト",
+        "ミニショルダーバッグ",
+        "バケットハット",
+        "シアーソックス",
+        "シルバーブレスレット",
+        "スカーフ",
+        "細フレームサングラス",
+        "レザーグローブ",
+    )
     for index in range(outfit_count):
         outfits.append(
             {
@@ -68,6 +78,8 @@ def make_response_payload(outfit_count=8):
                     if index % 2 == 0
                     else "ブラックスピネルのネックレスとロンジンの自動巻き時計"
                 ),
+                "extra_item": extra_items[index],
+                "extra_item_reason": "シルエットにメリハリを加えます。",
                 "reason": "色のコントラストを活かした提案です。",
             }
         )
@@ -119,6 +131,20 @@ class PhotoRecommenderTests(unittest.TestCase):
         self.assertTrue(result.garment_found)
         self.assertEqual(result.item_type, "シャツ")
         self.assertEqual(len(result.outfits), 8)
+        self.assertEqual(len({outfit.pattern for outfit in result.outfits}), 8)
+        self.assertEqual(
+            {outfit.extra_item for outfit in result.outfits},
+            {
+                "細ベルト",
+                "ミニショルダーバッグ",
+                "バケットハット",
+                "シアーソックス",
+                "シルバーブレスレット",
+                "スカーフ",
+                "細フレームサングラス",
+                "レザーグローブ",
+            },
+        )
         self.assertTrue(all(outfit.style == "きれいめカジュアル" for outfit in result.outfits))
         self.assertTrue(all("ブラックスピネル" in outfit.accessory for outfit in result.outfits))
         self.assertTrue(all("黒" in outfit.shoes and "厚底" in outfit.shoes for outfit in result.outfits))
@@ -142,6 +168,8 @@ class PhotoRecommenderTests(unittest.TestCase):
         self.assertIn("ロンジンの自動巻き時計", prompt)
         self.assertIn("黒の厚底靴", prompt)
         self.assertIn("前年同月の平均気温", prompt)
+        self.assertIn("8案は次の着こなしパターンを番号順に1案ずつ", prompt)
+        self.assertIn("写真に写っていないファッションアイテム", prompt)
         self.assertEqual(body["max_completion_tokens"], 5500)
         image_url = body["messages"][0]["content"][1]["image_url"]["url"]
         self.assertTrue(image_url.startswith("data:image/jpeg;base64,"))
@@ -445,6 +473,26 @@ class PhotoRecommenderTests(unittest.TestCase):
         post.return_value = response
 
         with self.assertRaisesRegex(PhotoAnalysisError, "配色データが不完全"):
+            self.call_recommender()
+
+    @patch("photo_recommender.requests.post")
+    def test_missing_add_on_item_is_rejected(self, post):
+        payload = make_response_payload()
+        del payload["outfits"][0]["extra_item"]
+        response = Mock()
+        response.ok = True
+        response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(payload, ensure_ascii=False)
+                    }
+                }
+            ]
+        }
+        post.return_value = response
+
+        with self.assertRaisesRegex(PhotoAnalysisError, "説明が不完全"):
             self.call_recommender()
 
     @patch("photo_recommender.requests.post")

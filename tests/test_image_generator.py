@@ -30,6 +30,7 @@ class ImageGeneratorTests(unittest.TestCase):
         self.generated_jpeg = make_jpeg()
         self.outfit = OutfitRecommendation(
             title="シティ・レイヤード",
+            pattern="Iライン×ロングレイヤード",
             style="きれいめストリート",
             colors=(
                 ("ネイビー", "#243956"),
@@ -41,6 +42,8 @@ class ImageGeneratorTests(unittest.TestCase):
             outerwear="ショートコート",
             shoes="レザースニーカー",
             accessory="ミニショルダー",
+            extra_item="シルバーの細チェーン",
+            extra_item_reason="顔まわりにさりげない輝きを加えます。",
             reason="ブルーシャツを主役にした着こなしです。",
         )
 
@@ -82,6 +85,8 @@ class ImageGeneratorTests(unittest.TestCase):
         self.assertEqual(payload["n"], 1)
         self.assertIn("青系の長袖シャツ", payload["prompt"])
         self.assertIn("ワイドスラックス", payload["prompt"])
+        self.assertIn("Iライン×ロングレイヤード", payload["prompt"])
+        self.assertIn("シルバーの細チェーン", payload["prompt"])
         with Image.open(BytesIO(result)) as image:
             self.assertEqual(image.format, "JPEG")
 

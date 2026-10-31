@@ -32,9 +32,11 @@ def _build_prompt(
         "Use realistic garment proportions and layering. Do not add text, labels, logos, watermarks, "
         "collages, or extra people. "
         f"Styling audience: {audience}. Outfit title: {outfit.title}. Style: {outfit.style}. "
+        f"Styling pattern: {outfit.pattern}. "
         f"Key item from the user's wardrobe photo: {item_type}, {item_summary}. "
         f"Top: {outfit.top}. Bottom: {outfit.bottom}. Outerwear: {outfit.outerwear}. "
         f"Shoes: {outfit.shoes}. Accessories: {outfit.accessory}. "
+        f"Optional add-on item: {outfit.extra_item}. Reason to add it: {outfit.extra_item_reason}. "
         f"Color palette: {colors}. "
         "The image is a visual interpretation of the outfit description, not a product photo."
     )

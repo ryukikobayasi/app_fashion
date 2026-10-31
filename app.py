@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).with_name(".env"))
 
+from camera_component import CameraCaptureError, capture_camera_photo, decode_camera_photo
 from outfit_engine import TREND_AS_OF, TREND_SOURCES, seasonal_trends
 from image_generator import ImageGenerationError, generate_outfit_image
 from photo_recommender import (
@@ -46,6 +47,7 @@ st.set_page_config(
 def render_outfit(outfit: OutfitRecommendation, number: int) -> None:
     with st.container(border=True):
         st.badge(f"LOOK {number:02}", color="red", icon=":material/checkroom:")
+        st.badge(outfit.pattern, color="blue", icon=":material/style:")
         st.subheader(outfit.title)
         st.caption(outfit.style)
         st.markdown(f"**色合わせ**　{' × '.join(name for name, _ in outfit.colors)}")
@@ -72,6 +74,8 @@ def render_outfit(outfit: OutfitRecommendation, number: int) -> None:
             ("小物", outfit.accessory),
         ):
             st.text(f"{label}　{value}")
+        st.markdown(f"**プラスワン候補**　{outfit.extra_item}")
+        st.caption(outfit.extra_item_reason)
         st.caption(outfit.reason)
 
 
@@ -126,35 +130,22 @@ capture_method = st.radio(
     horizontal=True,
 )
 if capture_method == "カメラで撮影":
-    st.caption("1枚撮るごとに「撮影した写真を追加」を押すと、続けて複数枚を登録できます。")
+    st.caption(
+        "背面カメラから起動します。前後を切り替えられ、1枚撮るごとに追加して複数枚を登録できます。"
+    )
     camera_photos = st.session_state.setdefault("camera_photos", [])
     camera_capture_index = st.session_state.setdefault("camera_capture_index", 0)
     if len(camera_photos) < MAX_PHOTO_COUNT:
-        captured_photo = st.camera_input(
-            "コーデに使いたいアイテムを撮影",
-            key=f"camera_capture_{camera_capture_index}",
-            help="撮影した写真の「写真を追加」を押すと、次の写真を続けて撮影できます。",
-        )
-        if captured_photo is not None:
-            captured_bytes = captured_photo.getvalue()
-            st.image(
-                captured_bytes,
-                caption="追加前のプレビュー",
-                alt="撮影して追加する手持ちアイテムの写真",
-                width="stretch",
-            )
-            if st.button(
-                "撮影した写真を追加",
-                key=f"add_camera_photo_{camera_capture_index}",
-                icon=":material/add_a_photo:",
-            ):
+        camera_result = capture_camera_photo(reset_token=camera_capture_index)
+        if camera_result.photo_added is not None:
+            try:
+                captured_bytes = decode_camera_photo(camera_result.photo_added)
+            except CameraCaptureError as error:
+                st.error(str(error))
+            else:
                 total_camera_bytes = sum(len(photo) for photo in camera_photos)
-                if len(captured_bytes) > MAX_IMAGE_BYTES:
-                    st.error("撮影した写真は30MB以下にしてください。")
-                elif len(camera_photos) >= MAX_PHOTO_COUNT:
-                    st.error(f"写真は最大{MAX_PHOTO_COUNT}枚まで追加できます。")
-                elif total_camera_bytes + len(captured_bytes) > MAX_TOTAL_IMAGE_BYTES:
-                    st.error("写真の合計サイズは60MB以下にしてください。")
+                if total_camera_bytes + len(captured_bytes) > MAX_TOTAL_IMAGE_BYTES:
+                    st.error("写真の合計サイズは60MB以下にしてください。撮影写真を追加できません。")
                 else:
                     st.session_state["camera_photos"] = [*camera_photos, captured_bytes]
                     st.session_state["camera_capture_index"] = camera_capture_index + 1
