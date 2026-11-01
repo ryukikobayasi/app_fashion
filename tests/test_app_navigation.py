@@ -147,6 +147,8 @@ class AppNavigationTests(unittest.TestCase):
         )
         self.assertTrue(any(button.label == "上へ" for button in app.button))
         self.assertTrue(any(button.label == "下へ" for button in app.button))
+        self.assertTrue(any(button.label == "1つ上へ" for button in app.button))
+        self.assertTrue(any(button.label == "1つ下へ" for button in app.button))
         self.assertTrue(any(button.label == "このサイトを削除" for button in app.button))
 
     def test_bookmarks_page_submits_edited_url_and_selected_group(self):
@@ -298,6 +300,49 @@ class AppNavigationTests(unittest.TestCase):
 
         self.assertFalse(app.exception, app.exception)
         save_group_order.assert_called_once_with(["ヘア", "コーデ"])
+
+    def test_bookmarks_page_persists_site_reordering(self):
+        bookmarks = [
+            Bookmark(
+                id=1,
+                url="https://fashion.example",
+                site_name="Fashion",
+                group_name="コーデ",
+            ),
+            Bookmark(
+                id=2,
+                url="https://hair.example",
+                site_name="Hair",
+                group_name="ヘア",
+            ),
+        ]
+        with (
+            patch("weather.get_weather", side_effect=WeatherDataError("offline")),
+            patch(
+                "weather.get_historical_monthly_average",
+                side_effect=WeatherDataError("offline"),
+            ),
+            patch(
+                "camera_component.capture_camera_photo",
+                return_value=SimpleNamespace(photo_added=None),
+            ),
+            patch("bookmark_store.load_bookmarks", return_value=bookmarks),
+            patch(
+                "bookmark_store.load_bookmark_group_order",
+                side_effect=lambda group_names: list(group_names),
+            ),
+            patch("bookmark_store.save_bookmark_order") as save_bookmark_order,
+        ):
+            app = AppTest.from_file(str(APP_FILE), default_timeout=10).run()
+            app.switch_page(str(Path("app_pages") / "bookmarks.py")).run()
+            next(
+                button
+                for button in app.button
+                if button.key == "move_bookmark_up_2"
+            ).click().run()
+
+        self.assertFalse(app.exception, app.exception)
+        save_bookmark_order.assert_called_once_with([2, 1])
 
     def test_hairstyle_page_is_registered_and_renders(self):
         with (

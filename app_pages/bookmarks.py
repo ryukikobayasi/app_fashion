@@ -13,12 +13,14 @@ from bookmark_store import (
     BookmarkLimitError,
     BookmarkStorageError,
     InvalidBookmarkDetails,
+    InvalidBookmarkOrder,
     InvalidBookmarkUrl,
     add_bookmark,
     delete_bookmark,
     load_bookmark_group_order,
     load_bookmarks,
     save_bookmark_group_order,
+    save_bookmark_order,
     update_bookmark,
 )
 
@@ -230,6 +232,47 @@ bookmark_urls = {bookmark.url for bookmark in bookmarks}
 pending_delete = st.session_state.get(_PENDING_DELETE_KEY)
 if pending_delete is not None and pending_delete not in bookmark_urls:
     st.session_state.pop(_PENDING_DELETE_KEY, None)
+
+if len(bookmarks) > 1:
+    with st.expander("登録サイトの順番", expanded=False):
+        st.caption(
+            "番号順が「すべて」と各グループタブに共通して反映されます。上下ボタンで1件ずつ移動し、変更は自動保存されます。"
+        )
+        for index, bookmark in enumerate(bookmarks):
+            with st.container(border=True):
+                st.markdown(f"**{index + 1}. {bookmark.site_name}**")
+                st.caption(f"グループ: {bookmark.group_name}")
+                move_up_column, move_down_column = st.columns(2)
+                with move_up_column:
+                    move_up = st.button(
+                        "1つ上へ",
+                        icon=":material/arrow_upward:",
+                        disabled=index == 0,
+                        key=f"move_bookmark_up_{bookmark.id}",
+                    )
+                with move_down_column:
+                    move_down = st.button(
+                        "1つ下へ",
+                        icon=":material/arrow_downward:",
+                        disabled=index == len(bookmarks) - 1,
+                        key=f"move_bookmark_down_{bookmark.id}",
+                    )
+
+            if move_up or move_down:
+                reordered_bookmarks = bookmarks.copy()
+                target_index = index - 1 if move_up else index + 1
+                reordered_bookmarks[index], reordered_bookmarks[target_index] = (
+                    reordered_bookmarks[target_index],
+                    reordered_bookmarks[index],
+                )
+                try:
+                    save_bookmark_order(
+                        [item.id for item in reordered_bookmarks]
+                    )
+                except (InvalidBookmarkOrder, BookmarkStorageError) as error:
+                    st.error(f"登録サイトの順番を保存できませんでした。{error}")
+                else:
+                    st.rerun()
 
 if len(groups) > 1:
     with st.expander("グループタブの順番", expanded=False):

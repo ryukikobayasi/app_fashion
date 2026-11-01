@@ -12,12 +12,14 @@ from bookmark_store import (
     BookmarkLimitError,
     BookmarkStorageError,
     InvalidBookmarkDetails,
+    InvalidBookmarkOrder,
     InvalidBookmarkUrl,
     add_bookmark,
     delete_bookmark,
     load_bookmark_group_order,
     load_bookmarks,
     save_bookmark_group_order,
+    save_bookmark_order,
     update_bookmark,
 )
 
@@ -158,6 +160,47 @@ class BookmarkStoreTests(unittest.TestCase):
         with self.assertRaises(InvalidBookmarkDetails):
             save_bookmark_group_order(["すべて"])
 
+    def test_bookmark_order_is_persisted(self):
+        add_bookmark("https://example.com", "Example", "Style")
+        add_bookmark("https://fashion.example", "Fashion", "Shopping")
+        add_bookmark("https://hair.example", "Hair", "Beauty")
+        bookmark_ids = {
+            bookmark.url: bookmark.id
+            for bookmark in load_bookmarks()
+        }
+
+        save_bookmark_order(
+            [
+                bookmark_ids["https://example.com"],
+                bookmark_ids["https://fashion.example"],
+                bookmark_ids["https://hair.example"],
+            ]
+        )
+
+        self.assertEqual(
+            [bookmark.url for bookmark in load_bookmarks()],
+            [
+                "https://example.com",
+                "https://fashion.example",
+                "https://hair.example",
+            ],
+        )
+
+    def test_bookmark_order_requires_all_unique_existing_ids(self):
+        add_bookmark("https://example.com", "Example", "Style")
+        add_bookmark("https://fashion.example", "Fashion", "Shopping")
+        bookmark_ids = [bookmark.id for bookmark in load_bookmarks()]
+
+        with self.assertRaises(InvalidBookmarkOrder):
+            save_bookmark_order([bookmark_ids[0], bookmark_ids[0]])
+        with self.assertRaises(InvalidBookmarkOrder):
+            save_bookmark_order(bookmark_ids[:1])
+
+        self.assertEqual(
+            [bookmark.id for bookmark in load_bookmarks()],
+            bookmark_ids,
+        )
+
     def test_delete_removes_existing_url_and_reports_missing_url(self):
         add_bookmark("https://example.com", "Example", "Style")
         add_bookmark("https://fashion.example", "Fashion", "Shopping")
@@ -191,6 +234,10 @@ class BookmarkStoreTests(unittest.TestCase):
                 "INSERT INTO fitting_bookmarks (url) VALUES (?)",
                 ("https://legacy.example",),
             )
+            connection.execute(
+                "INSERT INTO fitting_bookmarks (url) VALUES (?)",
+                ("https://legacy-newer.example",),
+            )
             connection.commit()
         finally:
             connection.close()
@@ -198,7 +245,10 @@ class BookmarkStoreTests(unittest.TestCase):
         bookmarks = load_bookmarks()
         self.assertEqual(
             _bookmark_details(bookmarks),
-            [("https://legacy.example", "legacy.example", "未分類")],
+            [
+                ("https://legacy-newer.example", "legacy-newer.example", "未分類"),
+                ("https://legacy.example", "legacy.example", "未分類"),
+            ],
         )
 
     def test_rejects_non_http_urls(self):

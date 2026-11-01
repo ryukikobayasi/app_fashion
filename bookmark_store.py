@@ -34,6 +34,10 @@ class InvalidBookmarkDetails(ValueError):
     """Raised when a bookmark name or group is invalid."""
 
 
+class InvalidBookmarkOrder(ValueError):
+    """Raised when a bookmark order does not match the saved records."""
+
+
 class BookmarkLimitError(ValueError):
     """Raised when the shared URL list reaches its maximum size."""
 
@@ -119,7 +123,8 @@ def _ensure_schema(connection: turso_serverless.Connection) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             url TEXT NOT NULL UNIQUE CHECK (length(url) <= 2048),
             site_name TEXT NOT NULL DEFAULT '',
-            group_name TEXT NOT NULL DEFAULT '未分類'
+            group_name TEXT NOT NULL DEFAULT '未分類',
+            sort_order INTEGER NOT NULL DEFAULT 0
         )
         """
     )
@@ -139,6 +144,19 @@ def _ensure_schema(connection: turso_serverless.Connection) -> None:
             "ALTER TABLE fitting_bookmarks "
             "ADD COLUMN group_name TEXT NOT NULL DEFAULT '未分類'"
         )
+    if "sort_order" not in columns:
+        connection.execute(
+            "ALTER TABLE fitting_bookmarks "
+            "ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"
+        )
+        rows = connection.execute(
+            "SELECT id FROM fitting_bookmarks ORDER BY id DESC"
+        ).fetchall()
+        for position, row in enumerate(rows):
+            connection.execute(
+                "UPDATE fitting_bookmarks SET sort_order = ? WHERE id = ?",
+                (position, row[0]),
+            )
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS fitting_bookmark_group_order (
@@ -154,7 +172,7 @@ def _load_unlocked(connection: turso_serverless.Connection) -> list[Bookmark]:
         """
         SELECT id, url, site_name, group_name
         FROM fitting_bookmarks
-        ORDER BY id DESC
+        ORDER BY sort_order ASC, id DESC
         """
     ).fetchall()
     if len(rows) > MAX_BOOKMARKS:
@@ -269,6 +287,42 @@ def save_bookmark_group_order(group_names: Sequence[object]) -> None:
     _run_database(save_order)
 
 
+def save_bookmark_order(bookmark_ids: Sequence[object]) -> None:
+    if isinstance(bookmark_ids, (str, bytes)):
+        raise InvalidBookmarkOrder("登録サイトの順番を正しく指定してください。")
+
+    ordered_ids = []
+    for bookmark_id in bookmark_ids:
+        if (
+            isinstance(bookmark_id, bool)
+            or not isinstance(bookmark_id, int)
+            or bookmark_id < 1
+        ):
+            raise InvalidBookmarkOrder("登録サイトの順番を正しく指定してください。")
+        ordered_ids.append(bookmark_id)
+
+    if len(set(ordered_ids)) != len(ordered_ids):
+        raise InvalidBookmarkOrder("同じサイトを複数回指定できません。")
+
+    def save_order(connection: turso_serverless.Connection) -> None:
+        rows = connection.execute(
+            "SELECT id FROM fitting_bookmarks"
+        ).fetchall()
+        saved_ids = {int(row[0]) for row in rows}
+        if set(ordered_ids) != saved_ids:
+            raise InvalidBookmarkOrder(
+                "登録サイトが更新されています。画面を再読み込みしてから並び替えてください。"
+            )
+
+        for position, bookmark_id in enumerate(ordered_ids):
+            connection.execute(
+                "UPDATE fitting_bookmarks SET sort_order = ? WHERE id = ?",
+                (position, bookmark_id),
+            )
+
+    _run_database(save_order)
+
+
 def add_bookmark(
     value: object,
     site_name: object = "",
@@ -292,14 +346,27 @@ def add_bookmark(
                 f"URLは最大{MAX_BOOKMARKS}件まで登録できます。"
             )
 
+        minimum_sort_order = connection.execute(
+            "SELECT MIN(sort_order) FROM fitting_bookmarks"
+        ).fetchone()[0]
+        next_sort_order = (
+            -1 if minimum_sort_order is None else int(minimum_sort_order) - 1
+        )
         cursor = connection.execute(
             """
-            INSERT OR IGNORE INTO fitting_bookmarks (url, site_name, group_name)
-            SELECT ?, ?, ? WHERE (
+            INSERT OR IGNORE INTO fitting_bookmarks
+                (url, site_name, group_name, sort_order)
+            SELECT ?, ?, ?, ? WHERE (
                 SELECT COUNT(*) FROM fitting_bookmarks
             ) < ?
             """,
-            (url, normalized_name, normalized_group, MAX_BOOKMARKS),
+            (
+                url,
+                normalized_name,
+                normalized_group,
+                next_sort_order,
+                MAX_BOOKMARKS,
+            ),
         )
         if cursor.rowcount == 1:
             return _load_unlocked(connection), True
