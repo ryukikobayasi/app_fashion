@@ -1,5 +1,5 @@
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from threading import RLock
 from typing import TypeVar
@@ -139,6 +139,14 @@ def _ensure_schema(connection: turso_serverless.Connection) -> None:
             "ALTER TABLE fitting_bookmarks "
             "ADD COLUMN group_name TEXT NOT NULL DEFAULT '未分類'"
         )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS fitting_bookmark_group_order (
+            group_name TEXT PRIMARY KEY NOT NULL,
+            position INTEGER NOT NULL CHECK (position >= 0)
+        )
+        """
+    )
 
 
 def _load_unlocked(connection: turso_serverless.Connection) -> list[Bookmark]:
@@ -204,6 +212,63 @@ def load_bookmarks() -> list[Bookmark]:
     return _run_database(_load_unlocked)
 
 
+def load_bookmark_group_order(group_names: Sequence[str]) -> list[str]:
+    available_groups = list(dict.fromkeys(group_names))
+
+    def load_order(connection: turso_serverless.Connection) -> list[str]:
+        rows = connection.execute(
+            """
+            SELECT group_name
+            FROM fitting_bookmark_group_order
+            ORDER BY position ASC
+            """
+        ).fetchall()
+        saved_groups = [row[0] for row in rows]
+        return [
+            group_name
+            for group_name in saved_groups
+            if group_name in available_groups
+        ] + [
+            group_name
+            for group_name in available_groups
+            if group_name not in saved_groups
+        ]
+
+    return _run_database(load_order)
+
+
+def save_bookmark_group_order(group_names: Sequence[object]) -> None:
+    if isinstance(group_names, str):
+        raise InvalidBookmarkDetails("グループの順番を正しく指定してください。")
+
+    normalized_groups = []
+    for group_name in group_names:
+        if not isinstance(group_name, str) or not group_name.strip():
+            raise InvalidBookmarkDetails("グループの順番を正しく指定してください。")
+        _, normalized_group = _normalize_bookmark_details(
+            "",
+            group_name,
+            "https://example.com",
+        )
+        normalized_groups.append(normalized_group)
+
+    if len(set(normalized_groups)) != len(normalized_groups):
+        raise InvalidBookmarkDetails("同じグループを複数回指定できません。")
+
+    def save_order(connection: turso_serverless.Connection) -> None:
+        connection.execute("DELETE FROM fitting_bookmark_group_order")
+        for position, group_name in enumerate(normalized_groups):
+            connection.execute(
+                """
+                INSERT INTO fitting_bookmark_group_order (group_name, position)
+                VALUES (?, ?)
+                """,
+                (group_name, position),
+            )
+
+    _run_database(save_order)
+
+
 def add_bookmark(
     value: object,
     site_name: object = "",
@@ -253,8 +318,10 @@ def update_bookmark(
     value: object,
     site_name: object,
     group_name: object,
+    new_url: object | None = None,
 ) -> bool:
-    url = normalize_bookmark_url(value)
+    original_url = normalize_bookmark_url(value)
+    url = normalize_bookmark_url(original_url if new_url is None else new_url)
     normalized_name, normalized_group = _normalize_bookmark_details(
         site_name,
         group_name,
@@ -262,13 +329,25 @@ def update_bookmark(
     )
 
     def update(connection: turso_serverless.Connection) -> bool:
+        duplicate = connection.execute(
+            """
+            SELECT 1
+            FROM fitting_bookmarks
+            WHERE url = ? AND url <> ?
+            LIMIT 1
+            """,
+            (url, original_url),
+        ).fetchone()
+        if duplicate:
+            raise InvalidBookmarkUrl("このURLはすでに登録されています。")
+
         cursor = connection.execute(
             """
             UPDATE fitting_bookmarks
-            SET site_name = ?, group_name = ?
+            SET url = ?, site_name = ?, group_name = ?
             WHERE url = ?
             """,
-            (normalized_name, normalized_group, url),
+            (url, normalized_name, normalized_group, original_url),
         )
         return cursor.rowcount == 1
 

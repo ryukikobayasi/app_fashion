@@ -16,7 +16,9 @@ from bookmark_store import (
     InvalidBookmarkUrl,
     add_bookmark,
     delete_bookmark,
+    load_bookmark_group_order,
     load_bookmarks,
+    save_bookmark_group_order,
     update_bookmark,
 )
 
@@ -26,29 +28,62 @@ _DELETE_NOTICE_KEY = "shared_bookmark_delete_notice"
 _UPDATE_NOTICE_KEY = "shared_bookmark_update_notice"
 
 
-def _render_bookmark(bookmark: Bookmark, tab_key: str) -> None:
+def _render_group_fields(
+    groups: list[str],
+    selected_group: str,
+    widget_key: str,
+) -> str:
+    group_options = groups or [selected_group or DEFAULT_BOOKMARK_GROUP]
+    if selected_group not in group_options:
+        group_options = [selected_group, *group_options]
+
+    selected = st.selectbox(
+        "登録済みグループ",
+        options=group_options,
+        index=group_options.index(selected_group),
+        key=f"{widget_key}_existing_group",
+    )
+    new_group = st.text_input(
+        "新しいグループ名（任意）",
+        placeholder="入力すると選択中のグループの代わりに使われます",
+        max_chars=MAX_BOOKMARK_GROUP_LENGTH,
+        key=f"{widget_key}_new_group",
+    )
+    return new_group.strip() or selected
+
+
+def _render_bookmark(bookmark: Bookmark, tab_key: str, groups: list[str]) -> None:
     bookmark_key = f"{tab_key}_{bookmark.id}"
     with st.container(border=True):
         st.subheader(bookmark.site_name)
         st.caption(f"グループ: {bookmark.group_name}")
-        st.code(bookmark.url, language=None, wrap_lines=True)
+        with st.expander(
+            "URLを表示",
+            key=f"show_bookmark_url_{bookmark_key}",
+        ):
+            st.code(bookmark.url, language=None, wrap_lines=True)
 
         with st.expander(
-            "サイト名・グループを編集",
+            "サイト情報を編集",
             key=f"edit_bookmark_section_{bookmark_key}",
         ):
             with st.form(f"edit_bookmark_form_{bookmark_key}"):
+                site_url = st.text_input(
+                    "サイトURL",
+                    value=bookmark.url,
+                    max_chars=MAX_BOOKMARK_URL_LENGTH,
+                    key=f"edit_bookmark_url_{bookmark_key}",
+                )
                 site_name = st.text_input(
                     "サイト名",
                     value=bookmark.site_name,
                     max_chars=MAX_BOOKMARK_NAME_LENGTH,
                     key=f"edit_bookmark_name_{bookmark_key}",
                 )
-                group_name = st.text_input(
-                    "グループ",
-                    value=bookmark.group_name,
-                    max_chars=MAX_BOOKMARK_GROUP_LENGTH,
-                    key=f"edit_bookmark_group_{bookmark_key}",
+                group_name = _render_group_fields(
+                    groups,
+                    bookmark.group_name,
+                    f"edit_bookmark_{bookmark_key}",
                 )
                 edit_submitted = st.form_submit_button(
                     "変更を保存",
@@ -62,14 +97,15 @@ def _render_bookmark(bookmark: Bookmark, tab_key: str) -> None:
                     bookmark.url,
                     site_name,
                     group_name,
+                    new_url=site_url,
                 )
-            except InvalidBookmarkDetails as error:
+            except (InvalidBookmarkUrl, InvalidBookmarkDetails) as error:
                 st.error(str(error))
             except BookmarkStorageError as error:
                 st.error(f"ブックマークを更新できませんでした。{error}")
             else:
                 st.session_state[_UPDATE_NOTICE_KEY] = (
-                    "サイト名とグループを更新しました。"
+                    "URL、サイト名、グループを更新しました。"
                     if updated
                     else "このサイトはすでに削除されています。"
                 )
@@ -125,7 +161,7 @@ def _render_bookmark(bookmark: Bookmark, tab_key: str) -> None:
 
 
 st.title("お気に入りサイト", icon=":material/bookmark:")
-st.caption("サイト名とグループを付けて保存し、グループごとのタブで整理できます。")
+st.caption("サイト名・URL・グループを保存し、登録後の編集やグループタブの並べ替えができます。")
 
 delete_notice = st.session_state.pop(_DELETE_NOTICE_KEY, None)
 if delete_notice:
@@ -141,6 +177,13 @@ except BookmarkStorageError as error:
     st.error(f"サイトURLを読み込めませんでした。{error}")
     st.stop()
 
+group_names = list(dict.fromkeys(bookmark.group_name for bookmark in bookmarks))
+try:
+    groups = load_bookmark_group_order(group_names)
+except BookmarkStorageError as error:
+    st.error(f"グループの順番を読み込めませんでした。{error}")
+    st.stop()
+
 with st.form("add_bookmark_form", clear_on_submit=True):
     bookmark_url = st.text_input(
         "サイトURL",
@@ -152,17 +195,17 @@ with st.form("add_bookmark_form", clear_on_submit=True):
         placeholder="例: Vogue Japan（空欄ならドメイン名）",
         max_chars=MAX_BOOKMARK_NAME_LENGTH,
     )
-    group_name = st.text_input(
-        "グループ",
-        value=DEFAULT_BOOKMARK_GROUP,
-        max_chars=MAX_BOOKMARK_GROUP_LENGTH,
+    group_name = _render_group_fields(
+        groups,
+        groups[0] if groups else DEFAULT_BOOKMARK_GROUP,
+        "add_bookmark",
     )
     add_submitted = st.form_submit_button(
         "URLを登録",
         type="primary",
         icon=":material/bookmark_add:",
     )
-st.caption("新しいグループ名を入力すると、そのグループのタブが作られます。")
+st.caption("登録済みグループを選ぶか、新しいグループ名を入力できます。URLは一覧で折りたたまれています。")
 
 if add_submitted:
     try:
@@ -180,6 +223,10 @@ if add_submitted:
             st.success("サイトURLを登録しました。")
         else:
             st.info("このURLはすでに登録されています。編集からサイト名やグループを変更できます。")
+        group_names = list(dict.fromkeys(bookmark.group_name for bookmark in bookmarks))
+        groups = [group for group in groups if group in group_names] + [
+            group for group in group_names if group not in groups
+        ]
 
 st.subheader("登録済みサイト")
 st.caption(f"{len(bookmarks)} / {MAX_BOOKMARKS} 件")
@@ -189,7 +236,47 @@ pending_delete = st.session_state.get(_PENDING_DELETE_KEY)
 if pending_delete is not None and pending_delete not in bookmark_urls:
     st.session_state.pop(_PENDING_DELETE_KEY, None)
 
-groups = list(dict.fromkeys(bookmark.group_name for bookmark in bookmarks))
+if len(groups) > 1:
+    with st.expander("グループタブの順番を変更"):
+        reorder_key = "bookmark_group_to_reorder"
+        if st.session_state.get(reorder_key) not in groups:
+            st.session_state.pop(reorder_key, None)
+        selected_group = st.selectbox(
+            "並び替えるグループ",
+            options=groups,
+            key=reorder_key,
+        )
+        selected_index = groups.index(selected_group)
+        move_up_column, move_down_column = st.columns(2)
+        with move_up_column:
+            move_up = st.button(
+                "上へ",
+                icon=":material/arrow_upward:",
+                disabled=selected_index == 0,
+                key="move_bookmark_group_up",
+            )
+        with move_down_column:
+            move_down = st.button(
+                "下へ",
+                icon=":material/arrow_downward:",
+                disabled=selected_index == len(groups) - 1,
+                key="move_bookmark_group_down",
+            )
+
+        if move_up or move_down:
+            reordered_groups = groups.copy()
+            target_index = selected_index - 1 if move_up else selected_index + 1
+            reordered_groups[selected_index], reordered_groups[target_index] = (
+                reordered_groups[target_index],
+                reordered_groups[selected_index],
+            )
+            try:
+                save_bookmark_group_order(reordered_groups)
+            except (InvalidBookmarkDetails, BookmarkStorageError) as error:
+                st.error(f"グループの順番を保存できませんでした。{error}")
+            else:
+                st.rerun()
+
 tab_specs = [(ALL_BOOKMARKS_TAB, None), *((group, group) for group in groups)]
 tabs = st.tabs([label for label, _ in tab_specs])
 
@@ -212,4 +299,4 @@ for tab, (_, selected_group) in zip(tabs, tab_specs):
         if not visible_bookmarks:
             st.info("まだサイトURLがありません。上のフォームから登録できます。")
         for bookmark in visible_bookmarks:
-            _render_bookmark(bookmark, tab_key)
+            _render_bookmark(bookmark, tab_key, groups)

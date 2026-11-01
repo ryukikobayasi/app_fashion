@@ -15,7 +15,9 @@ from bookmark_store import (
     InvalidBookmarkUrl,
     add_bookmark,
     delete_bookmark,
+    load_bookmark_group_order,
     load_bookmarks,
+    save_bookmark_group_order,
     update_bookmark,
 )
 
@@ -105,6 +107,56 @@ class BookmarkStoreTests(unittest.TestCase):
         self.assertFalse(
             update_bookmark("https://missing.example", "Missing", "Other")
         )
+
+    def test_update_changes_url(self):
+        add_bookmark("https://example.com", "Example", "未分類")
+
+        self.assertTrue(
+            update_bookmark(
+                "https://example.com",
+                "Example Japan",
+                "Fashion",
+                new_url="https://fashion.example",
+            )
+        )
+        self.assertEqual(
+            _bookmark_details(load_bookmarks()),
+            [("https://fashion.example", "Example Japan", "Fashion")],
+        )
+
+    def test_update_rejects_a_url_already_used_by_another_bookmark(self):
+        add_bookmark("https://example.com", "Example", "Style")
+        add_bookmark("https://fashion.example", "Fashion", "Shopping")
+
+        with self.assertRaisesRegex(InvalidBookmarkUrl, "すでに登録"):
+            update_bookmark(
+                "https://example.com",
+                "Example",
+                "Style",
+                new_url="https://fashion.example",
+            )
+
+        self.assertEqual(
+            [bookmark.url for bookmark in load_bookmarks()],
+            ["https://fashion.example", "https://example.com"],
+        )
+
+    def test_group_order_is_persisted_and_new_groups_are_appended(self):
+        add_bookmark("https://example.com", "Example", "Style")
+        add_bookmark("https://fashion.example", "Fashion", "Shopping")
+
+        save_bookmark_group_order(["Shopping", "Style"])
+
+        self.assertEqual(
+            load_bookmark_group_order(["Style", "Shopping", "Hair"]),
+            ["Shopping", "Style", "Hair"],
+        )
+
+    def test_group_order_rejects_duplicate_and_reserved_groups(self):
+        with self.assertRaises(InvalidBookmarkDetails):
+            save_bookmark_group_order(["Style", "Style"])
+        with self.assertRaises(InvalidBookmarkDetails):
+            save_bookmark_group_order(["すべて"])
 
     def test_delete_removes_existing_url_and_reports_missing_url(self):
         add_bookmark("https://example.com", "Example", "Style")

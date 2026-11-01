@@ -92,6 +92,7 @@ class AppNavigationTests(unittest.TestCase):
                 return_value=SimpleNamespace(photo_added=None),
             ),
             patch("bookmark_store.load_bookmarks", return_value=[]) as load_bookmarks,
+            patch("bookmark_store.load_bookmark_group_order", return_value=[]),
         ):
             app = AppTest.from_file(str(APP_FILE), default_timeout=10).run()
             app.switch_page(str(Path("app_pages") / "bookmarks.py")).run()
@@ -127,13 +128,122 @@ class AppNavigationTests(unittest.TestCase):
                 return_value=SimpleNamespace(photo_added=None),
             ),
             patch("bookmark_store.load_bookmarks", return_value=bookmarks),
+            patch(
+                "bookmark_store.load_bookmark_group_order",
+                side_effect=lambda group_names: list(group_names),
+            ),
         ):
             app = AppTest.from_file(str(APP_FILE), default_timeout=10).run()
             app.switch_page(str(Path("app_pages") / "bookmarks.py")).run()
 
         self.assertFalse(app.exception, app.exception)
         self.assertTrue(any(widget.label == "サイト名" for widget in app.text_input))
-        self.assertTrue(any(widget.label == "グループ" for widget in app.text_input))
+        self.assertTrue(any(widget.label == "サイトURL" for widget in app.text_input))
+        self.assertTrue(
+            any(widget.label == "登録済みグループ" for widget in app.selectbox)
+        )
+        self.assertTrue(
+            any(widget.label == "新しいグループ名（任意）" for widget in app.text_input)
+        )
+        self.assertTrue(any(button.label == "上へ" for button in app.button))
+        self.assertTrue(any(button.label == "下へ" for button in app.button))
+
+    def test_bookmarks_page_submits_edited_url_and_selected_group(self):
+        bookmarks = [
+            Bookmark(
+                id=1,
+                url="https://fashion.example",
+                site_name="Fashion",
+                group_name="コーデ",
+            ),
+            Bookmark(
+                id=2,
+                url="https://hair.example",
+                site_name="Hair",
+                group_name="ヘア",
+            ),
+        ]
+        with (
+            patch("weather.get_weather", side_effect=WeatherDataError("offline")),
+            patch(
+                "weather.get_historical_monthly_average",
+                side_effect=WeatherDataError("offline"),
+            ),
+            patch(
+                "camera_component.capture_camera_photo",
+                return_value=SimpleNamespace(photo_added=None),
+            ),
+            patch("bookmark_store.load_bookmarks", return_value=bookmarks),
+            patch(
+                "bookmark_store.load_bookmark_group_order",
+                side_effect=lambda group_names: list(group_names),
+            ),
+            patch("bookmark_store.update_bookmark", return_value=True) as update_bookmark,
+        ):
+            app = AppTest.from_file(str(APP_FILE), default_timeout=10).run()
+            app.switch_page(str(Path("app_pages") / "bookmarks.py")).run()
+            next(
+                widget
+                for widget in app.text_input
+                if widget.key == "edit_bookmark_url_all_1"
+            ).set_value("https://fashion-updated.example")
+            next(
+                widget
+                for widget in app.selectbox
+                if widget.key == "edit_bookmark_all_1_existing_group"
+            ).set_value("ヘア")
+            next(
+                button
+                for button in app.button
+                if button.key == "save_bookmark_all_1"
+            ).click().run()
+
+        self.assertFalse(app.exception, app.exception)
+        update_bookmark.assert_called_once_with(
+            "https://fashion.example",
+            "Fashion",
+            "ヘア",
+            new_url="https://fashion-updated.example",
+        )
+
+    def test_bookmarks_page_persists_group_reordering(self):
+        bookmarks = [
+            Bookmark(
+                id=1,
+                url="https://fashion.example",
+                site_name="Fashion",
+                group_name="コーデ",
+            ),
+            Bookmark(
+                id=2,
+                url="https://hair.example",
+                site_name="Hair",
+                group_name="ヘア",
+            ),
+        ]
+        with (
+            patch("weather.get_weather", side_effect=WeatherDataError("offline")),
+            patch(
+                "weather.get_historical_monthly_average",
+                side_effect=WeatherDataError("offline"),
+            ),
+            patch(
+                "camera_component.capture_camera_photo",
+                return_value=SimpleNamespace(photo_added=None),
+            ),
+            patch("bookmark_store.load_bookmarks", return_value=bookmarks),
+            patch(
+                "bookmark_store.load_bookmark_group_order",
+                side_effect=lambda group_names: list(group_names),
+            ),
+            patch("bookmark_store.save_bookmark_group_order") as save_group_order,
+        ):
+            app = AppTest.from_file(str(APP_FILE), default_timeout=10).run()
+            app.switch_page(str(Path("app_pages") / "bookmarks.py")).run()
+            next(button for button in app.button if button.label == "下へ").click().run()
+
+        self.assertFalse(app.exception, app.exception)
+        save_group_order.assert_called_once_with(["ヘア", "コーデ"])
 
     def test_hairstyle_page_is_registered_and_renders(self):
         with (
