@@ -47,7 +47,7 @@ class BookmarkStoreTests(unittest.TestCase):
         self.assertEqual(load_bookmarks(), [])
         self.assertEqual(load_bookmarks(), [])
 
-    def test_add_normalizes_deduplicates_and_keeps_newest_first(self):
+    def test_add_normalizes_deduplicates_and_appends_new_sites(self):
         bookmarks, added = add_bookmark(
             " https://example.com ",
             "Example",
@@ -68,8 +68,8 @@ class BookmarkStoreTests(unittest.TestCase):
         self.assertEqual(
             _bookmark_details(bookmarks),
             [
-                ("https://fashion.example", "Fashion", "Shopping"),
                 ("https://example.com", "Example", "Style"),
+                ("https://fashion.example", "Fashion", "Shopping"),
             ],
         )
 
@@ -82,8 +82,8 @@ class BookmarkStoreTests(unittest.TestCase):
         self.assertEqual(
             _bookmark_details(bookmarks),
             [
-                ("https://fashion.example", "Fashion", "Shopping"),
                 ("https://example.com", "Example", "Style"),
+                ("https://fashion.example", "Fashion", "Shopping"),
             ],
         )
 
@@ -140,7 +140,7 @@ class BookmarkStoreTests(unittest.TestCase):
 
         self.assertEqual(
             [bookmark.url for bookmark in load_bookmarks()],
-            ["https://fashion.example", "https://example.com"],
+            ["https://example.com", "https://fashion.example"],
         )
 
     def test_group_order_is_persisted_and_new_groups_are_appended(self):
@@ -182,6 +182,32 @@ class BookmarkStoreTests(unittest.TestCase):
             [
                 "https://example.com",
                 "https://fashion.example",
+                "https://hair.example",
+            ],
+        )
+
+    def test_new_site_is_appended_after_a_custom_order(self):
+        add_bookmark("https://example.com", "Example", "Style")
+        add_bookmark("https://fashion.example", "Fashion", "Shopping")
+        bookmark_ids = {
+            bookmark.url: bookmark.id
+            for bookmark in load_bookmarks()
+        }
+        save_bookmark_order(
+            [
+                bookmark_ids["https://fashion.example"],
+                bookmark_ids["https://example.com"],
+            ]
+        )
+
+        bookmarks, added = add_bookmark("https://hair.example", "Hair", "Beauty")
+
+        self.assertTrue(added)
+        self.assertEqual(
+            [bookmark.url for bookmark in bookmarks],
+            [
+                "https://fashion.example",
+                "https://example.com",
                 "https://hair.example",
             ],
         )

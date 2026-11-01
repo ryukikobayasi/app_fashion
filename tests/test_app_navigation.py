@@ -147,8 +147,7 @@ class AppNavigationTests(unittest.TestCase):
         )
         self.assertTrue(any(button.label == "上へ" for button in app.button))
         self.assertTrue(any(button.label == "下へ" for button in app.button))
-        self.assertTrue(any(button.label == "1つ上へ" for button in app.button))
-        self.assertTrue(any(button.label == "1つ下へ" for button in app.button))
+        self.assertTrue(any(button.label == "先頭へ" for button in app.button))
         self.assertTrue(any(button.label == "このサイトを削除" for button in app.button))
 
     def test_bookmarks_page_submits_edited_url_and_selected_group(self):
@@ -315,6 +314,12 @@ class AppNavigationTests(unittest.TestCase):
                 site_name="Hair",
                 group_name="ヘア",
             ),
+            Bookmark(
+                id=3,
+                url="https://shoes.example",
+                site_name="Shoes",
+                group_name="小物",
+            ),
         ]
         with (
             patch("weather.get_weather", side_effect=WeatherDataError("offline")),
@@ -338,11 +343,11 @@ class AppNavigationTests(unittest.TestCase):
             next(
                 button
                 for button in app.button
-                if button.key == "move_bookmark_up_2"
+                if button.key == "move_bookmark_to_top_3"
             ).click().run()
 
         self.assertFalse(app.exception, app.exception)
-        save_bookmark_order.assert_called_once_with([2, 1])
+        save_bookmark_order.assert_called_once_with([3, 1, 2])
 
     def test_hairstyle_page_is_registered_and_renders(self):
         with (

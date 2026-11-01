@@ -236,35 +236,28 @@ if pending_delete is not None and pending_delete not in bookmark_urls:
 if len(bookmarks) > 1:
     with st.expander("登録サイトの順番", expanded=False):
         st.caption(
-            "番号順が「すべて」と各グループタブに共通して反映されます。上下ボタンで1件ずつ移動し、変更は自動保存されます。"
+            "「先頭へ」でサイトを一覧の一番上に移動できます。新しく登録したサイトは末尾に追加され、変更は自動保存されます。"
         )
         for index, bookmark in enumerate(bookmarks):
+            move_to_top = False
             with st.container(border=True):
                 st.markdown(f"**{index + 1}. {bookmark.site_name}**")
                 st.caption(f"グループ: {bookmark.group_name}")
-                move_up_column, move_down_column = st.columns(2)
-                with move_up_column:
-                    move_up = st.button(
-                        "1つ上へ",
+                if index == 0:
+                    st.caption("現在先頭です")
+                else:
+                    move_to_top = st.button(
+                        "先頭へ",
                         icon=":material/arrow_upward:",
-                        disabled=index == 0,
-                        key=f"move_bookmark_up_{bookmark.id}",
-                    )
-                with move_down_column:
-                    move_down = st.button(
-                        "1つ下へ",
-                        icon=":material/arrow_downward:",
-                        disabled=index == len(bookmarks) - 1,
-                        key=f"move_bookmark_down_{bookmark.id}",
+                        key=f"move_bookmark_to_top_{bookmark.id}",
                     )
 
-            if move_up or move_down:
-                reordered_bookmarks = bookmarks.copy()
-                target_index = index - 1 if move_up else index + 1
-                reordered_bookmarks[index], reordered_bookmarks[target_index] = (
-                    reordered_bookmarks[target_index],
-                    reordered_bookmarks[index],
-                )
+            if move_to_top:
+                reordered_bookmarks = [
+                    bookmark,
+                    *bookmarks[:index],
+                    *bookmarks[index + 1 :],
+                ]
                 try:
                     save_bookmark_order(
                         [item.id for item in reordered_bookmarks]

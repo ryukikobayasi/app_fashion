@@ -346,11 +346,11 @@ def add_bookmark(
                 f"URLは最大{MAX_BOOKMARKS}件まで登録できます。"
             )
 
-        minimum_sort_order = connection.execute(
-            "SELECT MIN(sort_order) FROM fitting_bookmarks"
+        maximum_sort_order = connection.execute(
+            "SELECT MAX(sort_order) FROM fitting_bookmarks"
         ).fetchone()[0]
         next_sort_order = (
-            -1 if minimum_sort_order is None else int(minimum_sort_order) - 1
+            0 if maximum_sort_order is None else int(maximum_sort_order) + 1
         )
         cursor = connection.execute(
             """
