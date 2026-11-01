@@ -7,6 +7,7 @@ from bookmark_store import (
     DEFAULT_BOOKMARK_GROUP,
     MAX_BOOKMARKS,
     MAX_BOOKMARK_GROUP_LENGTH,
+    MAX_BOOKMARK_MEMO_LENGTH,
     MAX_BOOKMARK_NAME_LENGTH,
     MAX_BOOKMARK_URL_LENGTH,
     Bookmark,
@@ -19,6 +20,7 @@ from bookmark_store import (
     delete_bookmark,
     load_bookmark_group_order,
     load_bookmarks,
+    rename_bookmark_group,
     save_bookmark_group_order,
     save_bookmark_order,
     update_bookmark,
@@ -28,6 +30,7 @@ from bookmark_store import (
 _PENDING_DELETE_KEY = "pending_shared_bookmark_delete"
 _DELETE_NOTICE_KEY = "shared_bookmark_delete_notice"
 _UPDATE_NOTICE_KEY = "shared_bookmark_update_notice"
+_GROUP_RENAME_NOTICE_KEY = "shared_bookmark_group_rename_notice"
 
 
 def _render_group_fields(
@@ -39,11 +42,15 @@ def _render_group_fields(
     if selected_group not in group_options:
         group_options = [selected_group, *group_options]
 
+    selection_key = f"{widget_key}_existing_group"
+    if st.session_state.get(selection_key) not in group_options:
+        st.session_state.pop(selection_key, None)
+
     selected = st.selectbox(
         "登録済みグループ",
         options=group_options,
         index=group_options.index(selected_group),
-        key=f"{widget_key}_existing_group",
+        key=selection_key,
     )
     new_group = st.text_input(
         "新しいグループ名（任意）",
@@ -56,9 +63,14 @@ def _render_group_fields(
 
 def _render_bookmark(bookmark: Bookmark, tab_key: str, groups: list[str]) -> None:
     bookmark_key = f"{tab_key}_{bookmark.id}"
+    group_rename_widget_key = (
+        f"{bookmark_key}_{sha256(bookmark.group_name.encode('utf-8')).hexdigest()[:12]}"
+    )
     with st.container(border=True):
         st.subheader(bookmark.site_name)
         st.caption(f"グループ: {bookmark.group_name}")
+        if bookmark.memo:
+            st.caption(f"メモ: {bookmark.memo}")
         with st.expander(
             "サイト情報を編集",
             key=f"edit_bookmark_section_{bookmark_key}",
@@ -82,6 +94,13 @@ def _render_bookmark(bookmark: Bookmark, tab_key: str, groups: list[str]) -> Non
                     bookmark.group_name,
                     f"edit_bookmark_{bookmark_key}",
                 )
+                memo = st.text_area(
+                    "メモ",
+                    value=bookmark.memo,
+                    max_chars=MAX_BOOKMARK_MEMO_LENGTH,
+                    help="入力したメモは、登録済み一覧でグループ名の下に表示されます。",
+                    key=f"edit_bookmark_memo_{bookmark_key}",
+                )
                 edit_submitted = st.form_submit_button(
                     "変更を保存",
                     key=f"save_bookmark_{bookmark_key}",
@@ -95,6 +114,7 @@ def _render_bookmark(bookmark: Bookmark, tab_key: str, groups: list[str]) -> Non
                         site_name,
                         group_name,
                         new_url=site_url,
+                        memo=memo,
                     )
                 except (InvalidBookmarkUrl, InvalidBookmarkDetails) as error:
                     st.error(str(error))
@@ -102,11 +122,43 @@ def _render_bookmark(bookmark: Bookmark, tab_key: str, groups: list[str]) -> Non
                     st.error(f"ブックマークを更新できませんでした。{error}")
                 else:
                     st.session_state[_UPDATE_NOTICE_KEY] = (
-                        "URL、サイト名、グループを更新しました。"
+                        "URL、サイト名、グループ、メモを更新しました。"
                         if updated
                         else "このサイトはすでに削除されています。"
                     )
                     st.rerun()
+
+            with st.container(border=True):
+                st.markdown(f"**グループ名を変更: {bookmark.group_name}**")
+                st.caption("このグループに属するすべてのサイトに反映されます。")
+                with st.form(
+                    f"rename_bookmark_group_form_{group_rename_widget_key}"
+                ):
+                    new_group_name = st.text_input(
+                        "新しいグループ名",
+                        max_chars=MAX_BOOKMARK_GROUP_LENGTH,
+                        key=f"rename_bookmark_group_name_{group_rename_widget_key}",
+                    )
+                    rename_submitted = st.form_submit_button(
+                        "グループ名を変更",
+                        key=f"save_group_rename_{group_rename_widget_key}",
+                    )
+
+                if rename_submitted:
+                    try:
+                        renamed = rename_bookmark_group(
+                            bookmark.group_name,
+                            new_group_name,
+                        )
+                    except (InvalidBookmarkDetails, BookmarkStorageError) as error:
+                        st.error(f"グループ名を変更できませんでした。{error}")
+                    else:
+                        if renamed:
+                            st.session_state[_GROUP_RENAME_NOTICE_KEY] = (
+                                "グループ名を変更しました。"
+                            )
+                            st.rerun()
+                        st.info("変更対象のグループはすでにありません。")
 
             st.divider()
             if st.session_state.get(_PENDING_DELETE_KEY) == bookmark.url:
@@ -158,7 +210,7 @@ def _render_bookmark(bookmark: Bookmark, tab_key: str, groups: list[str]) -> Non
 
 
 st.title("お気に入りサイト", icon=":material/bookmark:")
-st.caption("サイト名・URL・グループを保存し、登録後の編集やグループタブの並べ替えができます。")
+st.caption("サイト名・URL・グループ・メモを保存し、登録後の編集や並べ替えができます。")
 
 delete_notice = st.session_state.pop(_DELETE_NOTICE_KEY, None)
 if delete_notice:
@@ -167,6 +219,10 @@ if delete_notice:
 update_notice = st.session_state.pop(_UPDATE_NOTICE_KEY, None)
 if update_notice:
     st.success(update_notice)
+
+group_rename_notice = st.session_state.pop(_GROUP_RENAME_NOTICE_KEY, None)
+if group_rename_notice:
+    st.success(group_rename_notice)
 
 try:
     bookmarks = load_bookmarks()
@@ -236,28 +292,53 @@ if pending_delete is not None and pending_delete not in bookmark_urls:
 if len(bookmarks) > 1:
     with st.expander("登録サイトの順番", expanded=False):
         st.caption(
-            "「先頭へ」でサイトを一覧の一番上に移動できます。新しく登録したサイトは末尾に追加され、変更は自動保存されます。"
+            "「上へ」「下へ」で1つずつ、「先頭へ」で一覧の一番上に移動できます。新しく登録したサイトは末尾に追加され、変更は自動保存されます。"
         )
         for index, bookmark in enumerate(bookmarks):
-            move_to_top = False
             with st.container(border=True):
                 st.markdown(f"**{index + 1}. {bookmark.site_name}**")
                 st.caption(f"グループ: {bookmark.group_name}")
-                if index == 0:
-                    st.caption("現在先頭です")
-                else:
+                move_up_column, move_down_column, move_to_top_column = st.columns(3)
+                with move_up_column:
+                    move_up = st.button(
+                        "1つ上へ",
+                        icon=":material/arrow_upward:",
+                        disabled=index == 0,
+                        key=f"move_bookmark_up_{bookmark.id}",
+                    )
+                with move_down_column:
+                    move_down = st.button(
+                        "1つ下へ",
+                        icon=":material/arrow_downward:",
+                        disabled=index == len(bookmarks) - 1,
+                        key=f"move_bookmark_down_{bookmark.id}",
+                    )
+                with move_to_top_column:
                     move_to_top = st.button(
                         "先頭へ",
                         icon=":material/arrow_upward:",
+                        disabled=index == 0,
                         key=f"move_bookmark_to_top_{bookmark.id}",
                     )
 
-            if move_to_top:
-                reordered_bookmarks = [
-                    bookmark,
-                    *bookmarks[:index],
-                    *bookmarks[index + 1 :],
-                ]
+            if move_up or move_down or move_to_top:
+                reordered_bookmarks = list(bookmarks)
+                if move_up:
+                    reordered_bookmarks[index - 1], reordered_bookmarks[index] = (
+                        reordered_bookmarks[index],
+                        reordered_bookmarks[index - 1],
+                    )
+                elif move_down:
+                    reordered_bookmarks[index], reordered_bookmarks[index + 1] = (
+                        reordered_bookmarks[index + 1],
+                        reordered_bookmarks[index],
+                    )
+                else:
+                    reordered_bookmarks = [
+                        bookmark,
+                        *bookmarks[:index],
+                        *bookmarks[index + 1 :],
+                    ]
                 try:
                     save_bookmark_order(
                         [item.id for item in reordered_bookmarks]

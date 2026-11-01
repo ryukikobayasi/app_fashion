@@ -11,6 +11,7 @@ from bookmark_store import (
     Bookmark,
     BookmarkLimitError,
     BookmarkStorageError,
+    MAX_BOOKMARK_MEMO_LENGTH,
     InvalidBookmarkDetails,
     InvalidBookmarkOrder,
     InvalidBookmarkUrl,
@@ -18,6 +19,7 @@ from bookmark_store import (
     delete_bookmark,
     load_bookmark_group_order,
     load_bookmarks,
+    rename_bookmark_group,
     save_bookmark_group_order,
     save_bookmark_order,
     update_bookmark,
@@ -110,6 +112,47 @@ class BookmarkStoreTests(unittest.TestCase):
             update_bookmark("https://missing.example", "Missing", "Other")
         )
 
+    def test_memo_is_saved_updated_and_cleared(self):
+        add_bookmark(
+            "https://example.com",
+            "Example",
+            "Style",
+            memo="店頭価格を確認",
+        )
+
+        self.assertEqual(load_bookmarks()[0].memo, "店頭価格を確認")
+        self.assertTrue(
+            update_bookmark("https://example.com", "Example", "Style")
+        )
+        self.assertEqual(load_bookmarks()[0].memo, "店頭価格を確認")
+
+        self.assertTrue(
+            update_bookmark(
+                "https://example.com",
+                "Example",
+                "Style",
+                memo="サイズも確認",
+            )
+        )
+        self.assertEqual(load_bookmarks()[0].memo, "サイズも確認")
+
+        self.assertTrue(
+            update_bookmark(
+                "https://example.com",
+                "Example",
+                "Style",
+                memo="",
+            )
+        )
+        self.assertEqual(load_bookmarks()[0].memo, "")
+
+    def test_rejects_too_long_memo(self):
+        with self.assertRaises(InvalidBookmarkDetails):
+            add_bookmark(
+                "https://example.com",
+                memo="x" * (MAX_BOOKMARK_MEMO_LENGTH + 1),
+            )
+
     def test_update_changes_url(self):
         add_bookmark("https://example.com", "Example", "未分類")
 
@@ -159,6 +202,37 @@ class BookmarkStoreTests(unittest.TestCase):
             save_bookmark_group_order(["Style", "Style"])
         with self.assertRaises(InvalidBookmarkDetails):
             save_bookmark_group_order(["すべて"])
+
+    def test_renaming_group_updates_all_sites_and_preserves_tab_order(self):
+        add_bookmark("https://example.com", "Example", "Style")
+        add_bookmark("https://fashion.example", "Fashion", "Style")
+        add_bookmark("https://hair.example", "Hair", "Shopping")
+        save_bookmark_group_order(["Shopping", "Style"])
+
+        self.assertTrue(rename_bookmark_group("Style", "Fashion"))
+
+        self.assertEqual(
+            [bookmark.group_name for bookmark in load_bookmarks()],
+            ["Fashion", "Fashion", "Shopping"],
+        )
+        self.assertEqual(
+            load_bookmark_group_order(["Fashion", "Shopping"]),
+            ["Shopping", "Fashion"],
+        )
+
+    def test_renaming_group_rejects_duplicate_or_reserved_names(self):
+        add_bookmark("https://example.com", "Example", "Style")
+        add_bookmark("https://fashion.example", "Fashion", "Shopping")
+
+        with self.assertRaises(InvalidBookmarkDetails):
+            rename_bookmark_group("Style", "Shopping")
+        with self.assertRaises(InvalidBookmarkDetails):
+            rename_bookmark_group("Style", "すべて")
+
+        self.assertEqual(
+            [bookmark.group_name for bookmark in load_bookmarks()],
+            ["Style", "Shopping"],
+        )
 
     def test_bookmark_order_is_persisted(self):
         add_bookmark("https://example.com", "Example", "Style")

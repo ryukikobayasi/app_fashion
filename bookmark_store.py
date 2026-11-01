@@ -11,6 +11,7 @@ import turso_serverless
 MAX_BOOKMARK_URL_LENGTH = 2048
 MAX_BOOKMARK_NAME_LENGTH = 100
 MAX_BOOKMARK_GROUP_LENGTH = 50
+MAX_BOOKMARK_MEMO_LENGTH = 1000
 MAX_BOOKMARKS = 1000
 DEFAULT_BOOKMARK_GROUP = "未分類"
 ALL_BOOKMARKS_TAB = "すべて"
@@ -24,6 +25,7 @@ class Bookmark:
     url: str
     site_name: str
     group_name: str
+    memo: str = ""
 
 
 class InvalidBookmarkUrl(ValueError):
@@ -105,6 +107,17 @@ def _normalize_bookmark_details(
     return normalized_name, normalized_group
 
 
+def _normalize_bookmark_memo(value: object) -> str:
+    if not isinstance(value, str):
+        raise InvalidBookmarkDetails("メモを文字列で入力してください。")
+    normalized_memo = value.strip()
+    if len(normalized_memo) > MAX_BOOKMARK_MEMO_LENGTH:
+        raise InvalidBookmarkDetails(
+            f"メモは{MAX_BOOKMARK_MEMO_LENGTH}文字以内で入力してください。"
+        )
+    return normalized_memo
+
+
 def _open_turso_connection() -> turso_serverless.Connection:
     database_url = os.environ.get("TURSO_DATABASE_URL", "").strip()
     auth_token = os.environ.get("TURSO_AUTH_TOKEN", "").strip()
@@ -124,7 +137,8 @@ def _ensure_schema(connection: turso_serverless.Connection) -> None:
             url TEXT NOT NULL UNIQUE CHECK (length(url) <= 2048),
             site_name TEXT NOT NULL DEFAULT '',
             group_name TEXT NOT NULL DEFAULT '未分類',
-            sort_order INTEGER NOT NULL DEFAULT 0
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            memo TEXT NOT NULL DEFAULT ''
         )
         """
     )
@@ -157,6 +171,11 @@ def _ensure_schema(connection: turso_serverless.Connection) -> None:
                 "UPDATE fitting_bookmarks SET sort_order = ? WHERE id = ?",
                 (position, row[0]),
             )
+    if "memo" not in columns:
+        connection.execute(
+            "ALTER TABLE fitting_bookmarks "
+            "ADD COLUMN memo TEXT NOT NULL DEFAULT ''"
+        )
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS fitting_bookmark_group_order (
@@ -170,7 +189,7 @@ def _ensure_schema(connection: turso_serverless.Connection) -> None:
 def _load_unlocked(connection: turso_serverless.Connection) -> list[Bookmark]:
     rows = connection.execute(
         """
-        SELECT id, url, site_name, group_name
+        SELECT id, url, site_name, group_name, memo
         FROM fitting_bookmarks
         ORDER BY sort_order ASC, id DESC
         """
@@ -190,12 +209,14 @@ def _load_unlocked(connection: turso_serverless.Connection) -> list[Bookmark]:
                 row[3],
                 url,
             )
+            memo = _normalize_bookmark_memo(row[4])
             bookmarks.append(
                 Bookmark(
                     id=bookmark_id,
                     url=url,
                     site_name=site_name,
                     group_name=group_name,
+                    memo=memo,
                 )
             )
     except (IndexError, TypeError, ValueError) as error:
@@ -287,6 +308,71 @@ def save_bookmark_group_order(group_names: Sequence[object]) -> None:
     _run_database(save_order)
 
 
+def rename_bookmark_group(old_name: object, new_name: object) -> bool:
+    if not isinstance(old_name, str) or not old_name.strip():
+        raise InvalidBookmarkDetails("変更対象のグループを指定してください。")
+    if not isinstance(new_name, str) or not new_name.strip():
+        raise InvalidBookmarkDetails("新しいグループ名を入力してください。")
+
+    _, normalized_old_name = _normalize_bookmark_details(
+        "",
+        old_name,
+        "https://example.com",
+    )
+    _, normalized_new_name = _normalize_bookmark_details(
+        "",
+        new_name,
+        "https://example.com",
+    )
+    if normalized_old_name == normalized_new_name:
+        raise InvalidBookmarkDetails("変更後のグループ名が現在と同じです。")
+
+    def rename(connection: turso_serverless.Connection) -> bool:
+        duplicate = connection.execute(
+            """
+            SELECT 1
+            FROM fitting_bookmarks
+            WHERE group_name = ? AND group_name <> ?
+            LIMIT 1
+            """,
+            (normalized_new_name, normalized_old_name),
+        ).fetchone()
+        if duplicate:
+            raise InvalidBookmarkDetails("そのグループ名はすでに使われています。")
+
+        cursor = connection.execute(
+            "UPDATE fitting_bookmarks SET group_name = ? WHERE group_name = ?",
+            (normalized_new_name, normalized_old_name),
+        )
+        if cursor.rowcount == 0:
+            return False
+
+        old_order = connection.execute(
+            """
+            SELECT position
+            FROM fitting_bookmark_group_order
+            WHERE group_name = ?
+            """,
+            (normalized_old_name,),
+        ).fetchone()
+        if old_order:
+            connection.execute(
+                "DELETE FROM fitting_bookmark_group_order WHERE group_name = ?",
+                (normalized_new_name,),
+            )
+            connection.execute(
+                """
+                UPDATE fitting_bookmark_group_order
+                SET group_name = ?
+                WHERE group_name = ?
+                """,
+                (normalized_new_name, normalized_old_name),
+            )
+        return True
+
+    return _run_database(rename)
+
+
 def save_bookmark_order(bookmark_ids: Sequence[object]) -> None:
     if isinstance(bookmark_ids, (str, bytes)):
         raise InvalidBookmarkOrder("登録サイトの順番を正しく指定してください。")
@@ -327,6 +413,7 @@ def add_bookmark(
     value: object,
     site_name: object = "",
     group_name: object = DEFAULT_BOOKMARK_GROUP,
+    memo: object = "",
 ) -> tuple[list[Bookmark], bool]:
     url = normalize_bookmark_url(value)
     normalized_name, normalized_group = _normalize_bookmark_details(
@@ -334,6 +421,7 @@ def add_bookmark(
         group_name,
         url,
     )
+    normalized_memo = _normalize_bookmark_memo(memo)
 
     def add(
         connection: turso_serverless.Connection,
@@ -355,8 +443,8 @@ def add_bookmark(
         cursor = connection.execute(
             """
             INSERT OR IGNORE INTO fitting_bookmarks
-                (url, site_name, group_name, sort_order)
-            SELECT ?, ?, ?, ? WHERE (
+                (url, site_name, group_name, sort_order, memo)
+            SELECT ?, ?, ?, ?, ? WHERE (
                 SELECT COUNT(*) FROM fitting_bookmarks
             ) < ?
             """,
@@ -365,6 +453,7 @@ def add_bookmark(
                 normalized_name,
                 normalized_group,
                 next_sort_order,
+                normalized_memo,
                 MAX_BOOKMARKS,
             ),
         )
@@ -386,6 +475,7 @@ def update_bookmark(
     site_name: object,
     group_name: object,
     new_url: object | None = None,
+    memo: object | None = None,
 ) -> bool:
     original_url = normalize_bookmark_url(value)
     url = normalize_bookmark_url(original_url if new_url is None else new_url)
@@ -394,6 +484,7 @@ def update_bookmark(
         group_name,
         url,
     )
+    normalized_memo = None if memo is None else _normalize_bookmark_memo(memo)
 
     def update(connection: turso_serverless.Connection) -> bool:
         duplicate = connection.execute(
@@ -408,14 +499,30 @@ def update_bookmark(
         if duplicate:
             raise InvalidBookmarkUrl("このURLはすでに登録されています。")
 
-        cursor = connection.execute(
-            """
-            UPDATE fitting_bookmarks
-            SET url = ?, site_name = ?, group_name = ?
-            WHERE url = ?
-            """,
-            (url, normalized_name, normalized_group, original_url),
-        )
+        if normalized_memo is None:
+            cursor = connection.execute(
+                """
+                UPDATE fitting_bookmarks
+                SET url = ?, site_name = ?, group_name = ?
+                WHERE url = ?
+                """,
+                (url, normalized_name, normalized_group, original_url),
+            )
+        else:
+            cursor = connection.execute(
+                """
+                UPDATE fitting_bookmarks
+                SET url = ?, site_name = ?, group_name = ?, memo = ?
+                WHERE url = ?
+                """,
+                (
+                    url,
+                    normalized_name,
+                    normalized_group,
+                    normalized_memo,
+                    original_url,
+                ),
+            )
         return cursor.rowcount == 1
 
     return _run_database(update)
