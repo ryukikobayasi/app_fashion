@@ -58,14 +58,9 @@ def _render_bookmark(bookmark: Bookmark, tab_key: str, groups: list[str]) -> Non
         st.subheader(bookmark.site_name)
         st.caption(f"グループ: {bookmark.group_name}")
         with st.expander(
-            "URLを表示",
-            key=f"show_bookmark_url_{bookmark_key}",
-        ):
-            st.code(bookmark.url, language=None, wrap_lines=True)
-
-        with st.expander(
             "サイト情報を編集",
             key=f"edit_bookmark_section_{bookmark_key}",
+            expanded=st.session_state.get(_PENDING_DELETE_KEY) == bookmark.url,
         ):
             with st.form(f"edit_bookmark_form_{bookmark_key}"):
                 site_url = st.text_input(
@@ -91,73 +86,73 @@ def _render_bookmark(bookmark: Bookmark, tab_key: str, groups: list[str]) -> Non
                     type="primary",
                 )
 
-        if edit_submitted:
-            try:
-                updated = update_bookmark(
-                    bookmark.url,
-                    site_name,
-                    group_name,
-                    new_url=site_url,
-                )
-            except (InvalidBookmarkUrl, InvalidBookmarkDetails) as error:
-                st.error(str(error))
-            except BookmarkStorageError as error:
-                st.error(f"ブックマークを更新できませんでした。{error}")
-            else:
-                st.session_state[_UPDATE_NOTICE_KEY] = (
-                    "URL、サイト名、グループを更新しました。"
-                    if updated
-                    else "このサイトはすでに削除されています。"
-                )
-                st.rerun()
-
-        if st.session_state.get(_PENDING_DELETE_KEY) == bookmark.url:
-            st.warning("このURLを削除しますか？")
-            confirm_column, cancel_column = st.columns(2)
-            with confirm_column:
-                if st.button(
-                    "削除する",
-                    key=f"confirm_bookmark_delete_{bookmark_key}",
-                    type="primary",
-                ):
-                    try:
-                        _, deleted = delete_bookmark(bookmark.url)
-                    except BookmarkStorageError as error:
-                        st.error(f"URLを削除できませんでした。{error}")
-                    else:
-                        st.session_state.pop(_PENDING_DELETE_KEY, None)
-                        st.session_state[_DELETE_NOTICE_KEY] = (
-                            "サイトURLを削除しました。"
-                            if deleted
-                            else "このURLはすでに削除されています。"
-                        )
-                        st.rerun()
-            with cancel_column:
-                if st.button(
-                    "キャンセル",
-                    key=f"cancel_bookmark_delete_{bookmark_key}",
-                ):
-                    st.session_state.pop(_PENDING_DELETE_KEY, None)
+            if edit_submitted:
+                try:
+                    updated = update_bookmark(
+                        bookmark.url,
+                        site_name,
+                        group_name,
+                        new_url=site_url,
+                    )
+                except (InvalidBookmarkUrl, InvalidBookmarkDetails) as error:
+                    st.error(str(error))
+                except BookmarkStorageError as error:
+                    st.error(f"ブックマークを更新できませんでした。{error}")
+                else:
+                    st.session_state[_UPDATE_NOTICE_KEY] = (
+                        "URL、サイト名、グループを更新しました。"
+                        if updated
+                        else "このサイトはすでに削除されています。"
+                    )
                     st.rerun()
-        else:
-            open_column, delete_column = st.columns([3, 1])
-            with open_column:
-                st.link_button(
-                    "サイトを開く",
-                    bookmark.url,
-                    key=f"open_bookmark_{bookmark_key}",
-                    icon=":material/open_in_new:",
-                    width="stretch",
-                )
-            with delete_column:
+
+            st.divider()
+            if st.session_state.get(_PENDING_DELETE_KEY) == bookmark.url:
+                st.warning("このサイトを削除しますか？")
+                st.caption("削除すると元に戻せません。")
+                confirm_column, cancel_column = st.columns(2)
+                with confirm_column:
+                    if st.button(
+                        "削除する",
+                        key=f"confirm_bookmark_delete_{bookmark_key}",
+                        type="primary",
+                    ):
+                        try:
+                            _, deleted = delete_bookmark(bookmark.url)
+                        except BookmarkStorageError as error:
+                            st.error(f"サイトを削除できませんでした。{error}")
+                        else:
+                            st.session_state.pop(_PENDING_DELETE_KEY, None)
+                            st.session_state[_DELETE_NOTICE_KEY] = (
+                                "サイトを削除しました。"
+                                if deleted
+                                else "このサイトはすでに削除されています。"
+                            )
+                            st.rerun()
+                with cancel_column:
+                    if st.button(
+                        "キャンセル",
+                        key=f"cancel_bookmark_delete_{bookmark_key}",
+                    ):
+                        st.session_state.pop(_PENDING_DELETE_KEY, None)
+                        st.rerun()
+            else:
                 if st.button(
-                    "削除",
+                    "このサイトを削除",
                     key=f"delete_bookmark_{bookmark_key}",
                     icon=":material/delete:",
                     width="stretch",
                 ):
                     st.session_state[_PENDING_DELETE_KEY] = bookmark.url
                     st.rerun()
+
+        st.link_button(
+            "サイトを開く",
+            bookmark.url,
+            key=f"open_bookmark_{bookmark_key}",
+            icon=":material/open_in_new:",
+            width="stretch",
+        )
 
 
 st.title("お気に入りサイト", icon=":material/bookmark:")
@@ -205,7 +200,7 @@ with st.form("add_bookmark_form", clear_on_submit=True):
         type="primary",
         icon=":material/bookmark_add:",
     )
-st.caption("登録済みグループを選ぶか、新しいグループ名を入力できます。URLは一覧で折りたたまれています。")
+st.caption("登録済みグループを選ぶか、新しいグループ名を入力できます。URLは編集フォーム内でのみ確認できます。")
 
 if add_submitted:
     try:
@@ -237,38 +232,36 @@ if pending_delete is not None and pending_delete not in bookmark_urls:
     st.session_state.pop(_PENDING_DELETE_KEY, None)
 
 if len(groups) > 1:
-    with st.expander("グループタブの順番を変更"):
-        reorder_key = "bookmark_group_to_reorder"
-        if st.session_state.get(reorder_key) not in groups:
-            st.session_state.pop(reorder_key, None)
-        selected_group = st.selectbox(
-            "並び替えるグループ",
-            options=groups,
-            key=reorder_key,
-        )
-        selected_index = groups.index(selected_group)
-        move_up_column, move_down_column = st.columns(2)
-        with move_up_column:
-            move_up = st.button(
-                "上へ",
-                icon=":material/arrow_upward:",
-                disabled=selected_index == 0,
-                key="move_bookmark_group_up",
-            )
-        with move_down_column:
-            move_down = st.button(
-                "下へ",
-                icon=":material/arrow_downward:",
-                disabled=selected_index == len(groups) - 1,
-                key="move_bookmark_group_down",
-            )
+    st.subheader("グループタブの順番")
+    st.caption(
+        "番号の上から順にタブが並びます。各グループの「上へ」「下へ」で1つずつ移動できます。変更は自動保存されます。"
+    )
+    for index, group in enumerate(groups):
+        group_key = sha256(group.encode("utf-8")).hexdigest()[:12]
+        with st.container(border=True):
+            st.markdown(f"**{index + 1}. {group}**")
+            move_up_column, move_down_column = st.columns(2)
+            with move_up_column:
+                move_up = st.button(
+                    "上へ",
+                    icon=":material/arrow_upward:",
+                    disabled=index == 0,
+                    key=f"move_bookmark_group_up_{group_key}",
+                )
+            with move_down_column:
+                move_down = st.button(
+                    "下へ",
+                    icon=":material/arrow_downward:",
+                    disabled=index == len(groups) - 1,
+                    key=f"move_bookmark_group_down_{group_key}",
+                )
 
         if move_up or move_down:
             reordered_groups = groups.copy()
-            target_index = selected_index - 1 if move_up else selected_index + 1
-            reordered_groups[selected_index], reordered_groups[target_index] = (
+            target_index = index - 1 if move_up else index + 1
+            reordered_groups[index], reordered_groups[target_index] = (
                 reordered_groups[target_index],
-                reordered_groups[selected_index],
+                reordered_groups[index],
             )
             try:
                 save_bookmark_group_order(reordered_groups)
