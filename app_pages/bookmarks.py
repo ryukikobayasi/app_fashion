@@ -232,43 +232,43 @@ if pending_delete is not None and pending_delete not in bookmark_urls:
     st.session_state.pop(_PENDING_DELETE_KEY, None)
 
 if len(groups) > 1:
-    st.subheader("グループタブの順番")
-    st.caption(
-        "番号の上から順にタブが並びます。各グループの「上へ」「下へ」で1つずつ移動できます。変更は自動保存されます。"
-    )
-    for index, group in enumerate(groups):
-        group_key = sha256(group.encode("utf-8")).hexdigest()[:12]
-        with st.container(border=True):
-            st.markdown(f"**{index + 1}. {group}**")
-            move_up_column, move_down_column = st.columns(2)
-            with move_up_column:
-                move_up = st.button(
-                    "上へ",
-                    icon=":material/arrow_upward:",
-                    disabled=index == 0,
-                    key=f"move_bookmark_group_up_{group_key}",
-                )
-            with move_down_column:
-                move_down = st.button(
-                    "下へ",
-                    icon=":material/arrow_downward:",
-                    disabled=index == len(groups) - 1,
-                    key=f"move_bookmark_group_down_{group_key}",
-                )
+    with st.expander("グループタブの順番", expanded=False):
+        st.caption(
+            "番号の上から順にタブが並びます。各グループの「上へ」「下へ」で1つずつ移動できます。変更は自動保存されます。"
+        )
+        for index, group in enumerate(groups):
+            group_key = sha256(group.encode("utf-8")).hexdigest()[:12]
+            with st.container(border=True):
+                st.markdown(f"**{index + 1}. {group}**")
+                move_up_column, move_down_column = st.columns(2)
+                with move_up_column:
+                    move_up = st.button(
+                        "上へ",
+                        icon=":material/arrow_upward:",
+                        disabled=index == 0,
+                        key=f"move_bookmark_group_up_{group_key}",
+                    )
+                with move_down_column:
+                    move_down = st.button(
+                        "下へ",
+                        icon=":material/arrow_downward:",
+                        disabled=index == len(groups) - 1,
+                        key=f"move_bookmark_group_down_{group_key}",
+                    )
 
-        if move_up or move_down:
-            reordered_groups = groups.copy()
-            target_index = index - 1 if move_up else index + 1
-            reordered_groups[index], reordered_groups[target_index] = (
-                reordered_groups[target_index],
-                reordered_groups[index],
-            )
-            try:
-                save_bookmark_group_order(reordered_groups)
-            except (InvalidBookmarkDetails, BookmarkStorageError) as error:
-                st.error(f"グループの順番を保存できませんでした。{error}")
-            else:
-                st.rerun()
+            if move_up or move_down:
+                reordered_groups = groups.copy()
+                target_index = index - 1 if move_up else index + 1
+                reordered_groups[index], reordered_groups[target_index] = (
+                    reordered_groups[target_index],
+                    reordered_groups[index],
+                )
+                try:
+                    save_bookmark_group_order(reordered_groups)
+                except (InvalidBookmarkDetails, BookmarkStorageError) as error:
+                    st.error(f"グループの順番を保存できませんでした。{error}")
+                else:
+                    st.rerun()
 
 tab_specs = [(ALL_BOOKMARKS_TAB, None), *((group, group) for group in groups)]
 tabs = st.tabs([label for label, _ in tab_specs])
