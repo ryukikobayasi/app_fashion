@@ -30,9 +30,10 @@ class CameraComponentTests(unittest.TestCase):
             capture_camera_photo(reset_token=0, initial_facing_mode="sideways")
 
     def test_preview_size_is_capped_for_both_camera_modes(self):
-        self.assertIn("max-width: 800px;", _CAMERA_CSS)
-        self.assertIn("max-height: 60vh;", _CAMERA_CSS)
+        self.assertIn("max-width: 480px;", _CAMERA_CSS)
+        self.assertIn("aspect-ratio: 3 / 4;", _CAMERA_CSS)
         self.assertIn("max-height: 65vh;", _CAMERA_CSS)
+        self.assertIn("object-fit: cover;", _CAMERA_CSS)
         self.assertIn(".camera-frame [hidden]", _CAMERA_CSS)
         self.assertIn("display: none !important;", _CAMERA_CSS)
 
@@ -41,15 +42,33 @@ class CameraComponentTests(unittest.TestCase):
             'window.matchMedia("(max-width: 640px)").matches',
             _CAMERA_JS,
         )
-        self.assertIn("width: { ideal: 720 }, height: { ideal: 1280 }", _CAMERA_JS)
+        self.assertIn("width: { ideal: 720 }, height: { ideal: 960 }", _CAMERA_JS)
+        self.assertIn("width: { ideal: 960 }, height: { ideal: 1280 }", _CAMERA_JS)
+        self.assertIn("aspectRatio: { ideal: portraitAspectRatio }", _CAMERA_JS)
 
-    def test_preview_tracks_the_camera_aspect_ratio(self):
+    def test_preview_and_capture_keep_a_portrait_aspect_ratio(self):
         self.assertIn(
-            "const aspectRatio = video.videoWidth / video.videoHeight",
+            "const portraitAspectRatio = 3 / 4",
             _CAMERA_JS,
         )
         self.assertIn(
-            "frame.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`",
+            'frame.style.aspectRatio = "3 / 4"',
+            _CAMERA_JS,
+        )
+        self.assertIn(
+            "const sourceAspectRatio = video.videoWidth / video.videoHeight",
+            _CAMERA_JS,
+        )
+        self.assertIn(
+            "sourceX = (video.videoWidth - sourceWidth) / 2",
+            _CAMERA_JS,
+        )
+        self.assertIn(
+            "sourceY = (video.videoHeight - sourceHeight) / 2",
+            _CAMERA_JS,
+        )
+        self.assertIn(
+            "context.drawImage(\n        video,\n        sourceX,\n        sourceY,",
             _CAMERA_JS,
         )
 

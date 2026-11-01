@@ -35,9 +35,9 @@ _CAMERA_CSS = """
 }
 .camera-frame {
   width: 100%;
-  max-width: 800px;
-  aspect-ratio: 4 / 3;
-  max-height: 60vh;
+  max-width: 480px;
+  aspect-ratio: 3 / 4;
+  max-height: 65vh;
   margin-inline: auto;
   overflow: hidden;
   display: flex;
@@ -51,7 +51,7 @@ _CAMERA_CSS = """
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
 }
 .camera-frame [hidden] {
   display: none !important;
@@ -122,6 +122,7 @@ export default function (component) {
   const retakeButton = parentElement.querySelector("#camera-retake")
   const addButton = parentElement.querySelector("#camera-add")
   const status = parentElement.querySelector("#camera-status")
+  const portraitAspectRatio = 3 / 4
 
   if (!video || !frame || !snapshot || !canvas || !switchButton || !captureButton ||
       !retryButton || !retakeButton || !addButton || !status) {
@@ -157,31 +158,28 @@ export default function (component) {
     }
 
     const updateFrameSize = () => {
-      if (!video.videoWidth || !video.videoHeight) {
-        return
-      }
-
-      const aspectRatio = video.videoWidth / video.videoHeight
       const frameStyle = window.getComputedStyle(frame)
       const maxWidth = Number.parseFloat(frameStyle.maxWidth)
       const maxHeight = Number.parseFloat(frameStyle.maxHeight)
-      const availableWidth = frame.parentElement?.clientWidth || frame.clientWidth
+      const availableWidth = frame.parentElement?.clientWidth ||
+        frame.clientWidth || window.innerWidth
       const widthLimit = Math.min(
         availableWidth,
         Number.isFinite(maxWidth) ? maxWidth : availableWidth,
       )
-      const heightLimit = Number.isFinite(maxHeight)
-        ? maxHeight
-        : window.innerHeight * 0.6
-      const width = Math.min(widthLimit, heightLimit * aspectRatio)
+      const heightLimit = Math.min(
+        Number.isFinite(maxHeight) ? maxHeight : window.innerHeight * 0.65,
+        window.innerHeight * 0.65,
+      )
+      const width = Math.min(widthLimit, heightLimit * portraitAspectRatio)
 
       if (!Number.isFinite(width) || width <= 0) {
         return
       }
 
       frame.style.width = `${width}px`
-      frame.style.height = `${width / aspectRatio}px`
-      frame.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`
+      frame.style.height = `${width / portraitAspectRatio}px`
+      frame.style.aspectRatio = "3 / 4"
     }
 
     const startCamera = async () => {
@@ -203,10 +201,11 @@ export default function (component) {
 
       const prefersPortrait = window.matchMedia("(max-width: 640px)").matches
       const preferredDimensions = prefersPortrait
-        ? { width: { ideal: 720 }, height: { ideal: 1280 } }
-        : { width: { ideal: 1280 }, height: { ideal: 720 } }
+        ? { width: { ideal: 720 }, height: { ideal: 960 } }
+        : { width: { ideal: 960 }, height: { ideal: 1280 } }
       const videoOptions = {
         ...preferredDimensions,
+        aspectRatio: { ideal: portraitAspectRatio },
         facingMode: { exact: state.facingMode },
       }
 
@@ -302,15 +301,37 @@ export default function (component) {
         setStatus("カメラ映像を準備しています。少し待ってから撮影してください。")
         return
       }
-      const scale = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight))
-      canvas.width = Math.round(video.videoWidth * scale)
-      canvas.height = Math.round(video.videoHeight * scale)
+      const sourceAspectRatio = video.videoWidth / video.videoHeight
+      let sourceX = 0
+      let sourceY = 0
+      let sourceWidth = video.videoWidth
+      let sourceHeight = video.videoHeight
+      if (sourceAspectRatio > portraitAspectRatio) {
+        sourceWidth = video.videoHeight * portraitAspectRatio
+        sourceX = (video.videoWidth - sourceWidth) / 2
+      } else if (sourceAspectRatio < portraitAspectRatio) {
+        sourceHeight = video.videoWidth / portraitAspectRatio
+        sourceY = (video.videoHeight - sourceHeight) / 2
+      }
+      const scale = Math.min(1, 1280 / Math.max(sourceWidth, sourceHeight))
+      canvas.width = Math.round(sourceWidth * scale)
+      canvas.height = Math.round(sourceHeight * scale)
       const context = canvas.getContext("2d")
       if (!context) {
         setStatus("写真を準備できませんでした。カメラを再起動してください。")
         return
       }
-      context.drawImage(video, 0, 0, canvas.width, canvas.height)
+      context.drawImage(
+        video,
+        sourceX,
+        sourceY,
+        sourceWidth,
+        sourceHeight,
+        0,
+        0,
+        canvas.width,
+        canvas.height,
+      )
       state.capturedDataUrl = canvas.toDataURL("image/jpeg", 0.9)
       snapshot.src = state.capturedDataUrl
       snapshot.hidden = false

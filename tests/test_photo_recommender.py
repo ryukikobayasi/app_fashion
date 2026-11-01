@@ -84,12 +84,8 @@ def make_response_payload(outfit_count=8):
                 "top": "アップロードしたシャツ",
                 "bottom": "ワイドパンツ",
                 "outerwear": "ジャケット",
-                "shoes": "黒の厚底靴",
-                "accessory": (
-                    "ブラックスピネルのネックレスとセイコーの時計"
-                    if index % 2 == 0
-                    else "ブラックスピネルのネックレスとロンジンの自動巻き時計"
-                ),
+                "shoes": "白のレザースニーカー",
+                "accessory": "小ぶりなショルダーバッグ",
                 "extra_item": extra_items[index],
                 "extra_item_reason": "シルエットにメリハリを加えます。",
                 "reason": "色のコントラストを活かした提案です。",
@@ -160,10 +156,8 @@ class PhotoRecommenderTests(unittest.TestCase):
         self.assertTrue(all(outfit.style == RECOMMENDATION_STYLE for outfit in result.outfits))
         self.assertTrue(all(outfit.inner.strip() for outfit in result.outfits))
         self.assertEqual(len({outfit.inner for outfit in result.outfits}), 8)
-        self.assertTrue(all("ブラックスピネル" in outfit.accessory for outfit in result.outfits))
-        self.assertTrue(all("黒" in outfit.shoes and "厚底" in outfit.shoes for outfit in result.outfits))
-        self.assertTrue(any("セイコー" in outfit.accessory for outfit in result.outfits))
-        self.assertTrue(any("ロンジン" in outfit.accessory for outfit in result.outfits))
+        self.assertTrue(all(outfit.accessory.strip() for outfit in result.outfits))
+        self.assertTrue(all(outfit.shoes.strip() for outfit in result.outfits))
         self.assertEqual(len(result.outfits[0].colors), 3)
         post.assert_called_once()
         request = post.call_args.kwargs
@@ -180,10 +174,10 @@ class PhotoRecommenderTests(unittest.TestCase):
         self.assertIn("表参道のきれいめカジュアル", prompt)
         self.assertIn("やりすぎなくらい大胆に遊び", prompt)
         self.assertIn("各案のinner欄", prompt)
-        self.assertIn("ブラックスピネルのネックレス", prompt)
-        self.assertIn("セイコーの時計", prompt)
-        self.assertIn("ロンジンの自動巻き時計", prompt)
-        self.assertIn("黒の厚底靴", prompt)
+        self.assertIn("accessory欄とshoes欄は各コーデに合うものを自由に選び", prompt)
+        self.assertNotIn("ブラックスピネル", prompt)
+        self.assertNotIn("セイコー", prompt)
+        self.assertNotIn("ロンジン", prompt)
         self.assertIn("前年同月の平均気温", prompt)
         self.assertIn("8案は次の着こなしパターンを番号順に1案ずつ", prompt)
         self.assertIn("写真に写っていないファッションアイテム", prompt)
@@ -461,9 +455,10 @@ class PhotoRecommenderTests(unittest.TestCase):
             self.call_recommender()
 
     @patch("photo_recommender.requests.post")
-    def test_response_must_include_requested_necklace_shoes_and_watch_brands(self, post):
+    def test_response_accepts_unrestricted_accessories_and_shoes(self, post):
         payload = make_response_payload()
         payload["outfits"][0]["shoes"] = "白いスニーカー"
+        payload["outfits"][0]["accessory"] = "無地のトートバッグ"
         response = Mock()
         response.ok = True
         response.json.return_value = {
@@ -473,8 +468,10 @@ class PhotoRecommenderTests(unittest.TestCase):
         }
         post.return_value = response
 
-        with self.assertRaisesRegex(PhotoAnalysisError, "黒の厚底靴"):
-            self.call_recommender()
+        result = self.call_recommender()
+
+        self.assertEqual(result.outfits[0].shoes, "白いスニーカー")
+        self.assertEqual(result.outfits[0].accessory, "無地のトートバッグ")
 
     @patch("photo_recommender.requests.post")
     def test_missing_color_role_is_rejected(self, post):
